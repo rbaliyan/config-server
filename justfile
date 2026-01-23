@@ -1,0 +1,54 @@
+# Install tools via mise
+setup:
+    mise install
+
+# Generate protobuf code
+proto:
+    protoc \
+        --go_out=. --go_opt=paths=source_relative \
+        --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+        --grpc-gateway_out=. --grpc-gateway_opt=paths=source_relative,generate_unbound_methods=true \
+        -I proto \
+        -I $(go env GOPATH)/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@v2.25.1 \
+        -I $(go env GOPATH)/pkg/mod/github.com/googleapis/googleapis@v0.0.0-20250115164207-1a7da9e5054f \
+        proto/config/v1/config.proto
+
+# Download googleapis for proto imports
+proto-deps:
+    @mkdir -p third_party/googleapis/google/api
+    @curl -sL https://raw.githubusercontent.com/googleapis/googleapis/master/google/api/annotations.proto -o third_party/googleapis/google/api/annotations.proto
+    @curl -sL https://raw.githubusercontent.com/googleapis/googleapis/master/google/api/http.proto -o third_party/googleapis/google/api/http.proto
+
+# Generate proto with local third_party (outputs to proto dir)
+proto-local:
+    protoc \
+        --go_out=proto --go_opt=paths=source_relative \
+        --go-grpc_out=proto --go-grpc_opt=paths=source_relative \
+        --grpc-gateway_out=proto --grpc-gateway_opt=paths=source_relative,generate_unbound_methods=true \
+        -I proto \
+        -I third_party/googleapis \
+        proto/config/v1/config.proto
+
+# Run tests
+test:
+    go test -v ./...
+
+# Run tests with race detector
+test-race:
+    go test -race ./...
+
+# Build all packages
+build:
+    go build ./...
+
+# Tidy dependencies
+tidy:
+    go mod tidy
+
+# Format code
+fmt:
+    go fmt ./...
+
+# Lint code
+lint:
+    go vet ./...

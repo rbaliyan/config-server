@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package config.v1;
+
+option go_package = "github.com/rbaliyan/config-server/proto/config/v1;configpb";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// ConfigService provides configuration management operations.
+service ConfigService {
+  // Get retrieves a configuration value by namespace and key.
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces/{namespace}/keys/{key}"
+    };
+  }
+
+  // Set creates or updates a configuration value.
+  rpc Set(SetRequest) returns (SetResponse) {
+    option (google.api.http) = {
+      put: "/v1/namespaces/{namespace}/keys/{key}"
+      body: "*"
+    };
+  }
+
+  // Delete removes a configuration value.
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {
+    option (google.api.http) = {
+      delete: "/v1/namespaces/{namespace}/keys/{key}"
+    };
+  }
+
+  // List returns configuration entries matching a filter.
+  rpc List(ListRequest) returns (ListResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces/{namespace}/keys"
+    };
+  }
+
+  // Watch streams configuration changes in real-time.
+  // This is a server-streaming RPC (gRPC only, no REST equivalent).
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+// GetRequest is the request for Get.
+message GetRequest {
+  string namespace = 1;
+  string key = 2;
+}
+
+// GetResponse is the response for Get.
+message GetResponse {
+  Entry entry = 1;
+}
+
+// SetRequest is the request for Set.
+message SetRequest {
+  string namespace = 1;
+  string key = 2;
+  bytes value = 3;
+  string codec = 4;           // "json", "yaml", "toml" - defaults to "json"
+  WriteMode write_mode = 5;   // Defaults to UPSERT
+}
+
+// WriteMode specifies how Set should handle existing entries.
+enum WriteMode {
+  WRITE_MODE_UNSPECIFIED = 0;
+  WRITE_MODE_UPSERT = 1;      // Create or update (default)
+  WRITE_MODE_CREATE = 2;      // Create only, fail if exists
+  WRITE_MODE_UPDATE = 3;      // Update only, fail if not exists
+}
+
+// SetResponse is the response for Set.
+message SetResponse {
+  Entry entry = 1;
+}
+
+// DeleteRequest is the request for Delete.
+message DeleteRequest {
+  string namespace = 1;
+  string key = 2;
+}
+
+// DeleteResponse is the response for Delete.
+message DeleteResponse {}
+
+// ListRequest is the request for List.
+message ListRequest {
+  string namespace = 1;
+  string prefix = 2;          // Key prefix filter (empty = all keys)
+  int32 limit = 3;            // Max results (0 = server default)
+  string cursor = 4;          // Pagination cursor from previous response
+}
+
+// ListResponse is the response for List.
+message ListResponse {
+  repeated Entry entries = 1;
+  string next_cursor = 2;     // Empty if no more results
+}
+
+// WatchRequest is the request for Watch.
+message WatchRequest {
+  repeated string namespaces = 1;  // Namespaces to watch (empty = all)
+  repeated string prefixes = 2;    // Key prefixes to watch (empty = all)
+}
+
+// WatchResponse is a streaming response for Watch.
+message WatchResponse {
+  ChangeType type = 1;
+  Entry entry = 2;            // Present for SET, may be minimal for DELETE
+}
+
+// ChangeType indicates the type of configuration change.
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CHANGE_TYPE_SET = 1;
+  CHANGE_TYPE_DELETE = 2;
+}
+
+// Entry represents a configuration entry.
+message Entry {
+  string namespace = 1;
+  string key = 2;
+  bytes value = 3;
+  string codec = 4;
+  int32 type = 5;             // config.Type enum value
+  int64 version = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
