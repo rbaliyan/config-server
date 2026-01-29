@@ -19,7 +19,7 @@ service ConfigService {
   // Set creates or updates a configuration value.
   rpc Set(SetRequest) returns (SetResponse) {
     option (google.api.http) = {
-      put: "/v1/namespaces/{namespace}/keys/{key}"
+      post: "/v1/namespaces/{namespace}/keys/{key}"
       body: "*"
     };
   }
@@ -41,6 +41,13 @@ service ConfigService {
   // Watch streams configuration changes in real-time.
   // This is a server-streaming RPC (gRPC only, no REST equivalent).
   rpc Watch(WatchRequest) returns (stream WatchResponse);
+
+  // CheckAccess verifies the caller's access level for a namespace.
+  rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces/{namespace}/access"
+    };
+  }
 }
 
 // GetRequest is the request for Get.
@@ -116,6 +123,18 @@ enum ChangeType {
   CHANGE_TYPE_UNSPECIFIED = 0;
   CHANGE_TYPE_SET = 1;
   CHANGE_TYPE_DELETE = 2;
+}
+
+// CheckAccessRequest is the request for CheckAccess.
+message CheckAccessRequest {
+  string namespace = 1;
+}
+
+// CheckAccessResponse is the response for CheckAccess.
+// For HTTP HEAD requests, access level is returned in X-Access-Level header.
+message CheckAccessResponse {
+  bool can_read = 1;
+  bool can_write = 2;
 }
 
 // Entry represents a configuration entry.

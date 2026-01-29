@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ConfigService_Get_FullMethodName    = "/config.v1.ConfigService/Get"
-	ConfigService_Set_FullMethodName    = "/config.v1.ConfigService/Set"
-	ConfigService_Delete_FullMethodName = "/config.v1.ConfigService/Delete"
-	ConfigService_List_FullMethodName   = "/config.v1.ConfigService/List"
-	ConfigService_Watch_FullMethodName  = "/config.v1.ConfigService/Watch"
+	ConfigService_Get_FullMethodName         = "/config.v1.ConfigService/Get"
+	ConfigService_Set_FullMethodName         = "/config.v1.ConfigService/Set"
+	ConfigService_Delete_FullMethodName      = "/config.v1.ConfigService/Delete"
+	ConfigService_List_FullMethodName        = "/config.v1.ConfigService/List"
+	ConfigService_Watch_FullMethodName       = "/config.v1.ConfigService/Watch"
+	ConfigService_CheckAccess_FullMethodName = "/config.v1.ConfigService/CheckAccess"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
@@ -43,6 +44,8 @@ type ConfigServiceClient interface {
 	// Watch streams configuration changes in real-time.
 	// This is a server-streaming RPC (gRPC only, no REST equivalent).
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
+	// CheckAccess verifies the caller's access level for a namespace.
+	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
 }
 
 type configServiceClient struct {
@@ -112,6 +115,16 @@ func (c *configServiceClient) Watch(ctx context.Context, in *WatchRequest, opts 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ConfigService_WatchClient = grpc.ServerStreamingClient[WatchResponse]
 
+func (c *configServiceClient) CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckAccessResponse)
+	err := c.cc.Invoke(ctx, ConfigService_CheckAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
@@ -129,6 +142,8 @@ type ConfigServiceServer interface {
 	// Watch streams configuration changes in real-time.
 	// This is a server-streaming RPC (gRPC only, no REST equivalent).
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
+	// CheckAccess verifies the caller's access level for a namespace.
+	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
 }
 
@@ -153,6 +168,9 @@ func (UnimplementedConfigServiceServer) List(context.Context, *ListRequest) (*Li
 }
 func (UnimplementedConfigServiceServer) Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error {
 	return status.Error(codes.Unimplemented, "method Watch not implemented")
+}
+func (UnimplementedConfigServiceServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAccess not implemented")
 }
 func (UnimplementedConfigServiceServer) mustEmbedUnimplementedConfigServiceServer() {}
 func (UnimplementedConfigServiceServer) testEmbeddedByValue()                       {}
@@ -258,6 +276,24 @@ func _ConfigService_Watch_Handler(srv interface{}, stream grpc.ServerStream) err
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ConfigService_WatchServer = grpc.ServerStreamingServer[WatchResponse]
 
+func _ConfigService_CheckAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).CheckAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_CheckAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).CheckAccess(ctx, req.(*CheckAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConfigService_ServiceDesc is the grpc.ServiceDesc for ConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -280,6 +316,10 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "List",
 			Handler:    _ConfigService_List_Handler,
+		},
+		{
+			MethodName: "CheckAccess",
+			Handler:    _ConfigService_CheckAccess_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

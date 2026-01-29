@@ -188,6 +188,29 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 	}
 }
 
+// CheckAccess verifies the caller's access level for a namespace.
+func (s *Service) CheckAccess(ctx context.Context, req *configpb.CheckAccessRequest) (*configpb.CheckAccessResponse, error) {
+	resp := &configpb.CheckAccessResponse{}
+
+	// Check read access
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Namespace: req.Namespace,
+		Operation: OperationRead,
+	}); err == nil {
+		resp.CanRead = true
+	}
+
+	// Check write access
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Namespace: req.Namespace,
+		Operation: OperationWrite,
+	}); err == nil {
+		resp.CanWrite = true
+	}
+
+	return resp, nil
+}
+
 // valueToProto converts a config.Value to a proto Entry.
 func valueToProto(namespace, key string, val config.Value) *configpb.Entry {
 	if val == nil {

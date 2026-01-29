@@ -313,7 +313,7 @@ func (s *RemoteStore) Set(ctx context.Context, namespace, key string, value conf
 	}
 
 	var writeMode configpb.WriteMode
-	switch value.WriteMode() {
+	switch config.GetWriteMode(value) {
 	case config.WriteModeCreate:
 		writeMode = configpb.WriteMode_WRITE_MODE_CREATE
 	case config.WriteModeUpdate:
