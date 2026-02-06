@@ -214,7 +214,7 @@ func (s *RemoteStore) recordFailure() {
 	}
 	s.circuitMu.Lock()
 	s.consecutiveFail++
-	if s.consecutiveFail >= 5 { // Open circuit after 5 consecutive failures
+	if s.consecutiveFail >= s.opts.circuitThreshold {
 		s.circuitOpen = true
 		s.circuitOpenAt = time.Now()
 	}
@@ -496,7 +496,7 @@ func (s *RemoteStore) watchLoop(
 		}
 
 		consecutiveErrors++
-		if consecutiveErrors > 10 {
+		if consecutiveErrors > s.opts.watchMaxErrors {
 			// Too many errors, give up
 			errCh <- err
 			return

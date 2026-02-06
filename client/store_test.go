@@ -331,10 +331,13 @@ func TestOptions(t *testing.T) {
 	t.Run("WithCircuitBreaker", func(t *testing.T) {
 		store, _ := NewRemoteStore("localhost:9999",
 			WithInsecure(),
-			WithCircuitBreaker(time.Minute),
+			WithCircuitBreaker(5, time.Minute),
 		)
 		if !store.opts.enableCircuit {
 			t.Error("enableCircuit should be true")
+		}
+		if store.opts.circuitThreshold != 5 {
+			t.Errorf("circuitThreshold = %d, want 5", store.opts.circuitThreshold)
 		}
 	})
 
@@ -362,7 +365,7 @@ func TestOptions(t *testing.T) {
 func TestCircuitBreaker(t *testing.T) {
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
-		WithCircuitBreaker(100*time.Millisecond),
+		WithCircuitBreaker(5, 100*time.Millisecond),
 	)
 
 	// Initially circuit should be closed
@@ -391,6 +394,27 @@ func TestCircuitBreaker(t *testing.T) {
 	store.recordFailure()
 	if store.isCircuitOpen() {
 		t.Error("Circuit should be closed after success reset")
+	}
+}
+
+func TestCircuitBreaker_CustomThreshold(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithCircuitBreaker(3, 100*time.Millisecond),
+	)
+
+	// 2 failures should not open circuit with threshold 3
+	for i := 0; i < 2; i++ {
+		store.recordFailure()
+	}
+	if store.isCircuitOpen() {
+		t.Error("Circuit should be closed after 2 failures with threshold 3")
+	}
+
+	// 3rd failure should open it
+	store.recordFailure()
+	if !store.isCircuitOpen() {
+		t.Error("Circuit should be open after 3 failures with threshold 3")
 	}
 }
 

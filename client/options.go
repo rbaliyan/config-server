@@ -21,13 +21,15 @@ type options struct {
 	maxRetries     int
 	retryBackoff   time.Duration
 	maxBackoff     time.Duration
-	enableCircuit  bool
-	circuitTimeout time.Duration
+	enableCircuit    bool
+	circuitThreshold int
+	circuitTimeout   time.Duration
 
 	// Watch options
 	watchBufferSize    int
 	watchReconnect     bool
 	watchReconnectWait time.Duration
+	watchMaxErrors     int
 
 	// Health check options
 	healthCheckInterval time.Duration
@@ -76,9 +78,11 @@ func defaultOptions() *options {
 		watchBufferSize:     100,
 		watchReconnect:      true,
 		watchReconnectWait:  time.Second,
+		watchMaxErrors:      10,
 		healthCheckInterval: 30 * time.Second,
 		keepaliveTime:       30 * time.Second,
 		keepaliveTimeout:    10 * time.Second,
+		circuitThreshold:    5,
 		circuitTimeout:      30 * time.Second,
 	}
 }
@@ -128,9 +132,11 @@ func WithRetry(maxRetries int, initialBackoff, maxBackoff time.Duration) Option 
 }
 
 // WithCircuitBreaker enables circuit breaker for resilience.
-func WithCircuitBreaker(timeout time.Duration) Option {
+// The threshold is the number of consecutive failures before the circuit opens.
+func WithCircuitBreaker(threshold int, timeout time.Duration) Option {
 	return func(o *options) {
 		o.enableCircuit = true
+		o.circuitThreshold = threshold
 		o.circuitTimeout = timeout
 	}
 }
@@ -140,6 +146,14 @@ func WithCircuitBreaker(timeout time.Duration) Option {
 func WithWatchBufferSize(size int) Option {
 	return func(o *options) {
 		o.watchBufferSize = size
+	}
+}
+
+// WithWatchMaxErrors sets the maximum number of consecutive watch errors
+// before the watch gives up. Default is 10.
+func WithWatchMaxErrors(n int) Option {
+	return func(o *options) {
+		o.watchMaxErrors = n
 	}
 }
 
