@@ -482,11 +482,18 @@ func (s *RemoteStore) watchLoop(
 		default:
 		}
 
-		err := s.watchStream(ctx, client, filter, ch)
+		connected, err := s.watchStream(ctx, client, filter, ch)
 
 		if err == nil || ctx.Err() != nil {
 			// Normal exit or context cancelled
 			return
+		}
+
+		// Reset counters if the stream was successfully established,
+		// since the failure happened mid-stream (not a connection failure).
+		if connected {
+			consecutiveErrors = 0
+			backoff = s.opts.watchReconnectWait
 		}
 
 		// Report error via callback if configured
@@ -537,25 +544,26 @@ func (s *RemoteStore) watchStream(
 	client configpb.ConfigServiceClient,
 	filter config.WatchFilter,
 	ch chan<- config.ChangeEvent,
-) error {
+) (connected bool, _ error) {
 	stream, err := client.Watch(ctx, &configpb.WatchRequest{
 		Namespaces: filter.Namespaces,
 		Prefixes:   filter.Prefixes,
 	})
 	if err != nil {
-		return fromGRPCError(err)
+		return false, fromGRPCError(err)
 	}
+	connected = true
 
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				return nil // Normal close
+				return connected, nil // Normal close
 			}
 			if ctx.Err() != nil {
-				return nil // Context cancelled
+				return connected, nil // Context cancelled
 			}
-			return fromGRPCError(err)
+			return connected, fromGRPCError(err)
 		}
 
 		if resp.Entry == nil {
@@ -579,9 +587,9 @@ func (s *RemoteStore) watchStream(
 		case ch <- event:
 			// Sent successfully
 		case <-ctx.Done():
-			return nil
+			return connected, nil
 		case <-s.closeCh:
-			return config.ErrStoreClosed
+			return connected, config.ErrStoreClosed
 		}
 	}
 }

@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
@@ -20,7 +20,11 @@ type Service struct {
 }
 
 // NewService creates a new ConfigService.
+// Panics if store is nil.
 func NewService(store config.Store, opts ...Option) *Service {
+	if store == nil {
+		panic("config-server: NewService requires a non-nil store")
+	}
 	s := &Service{
 		store:      store,
 		authorizer: DenyAll(), // Safe default
@@ -61,8 +65,13 @@ func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.
 		return nil, toGRPCError(err)
 	}
 
+	entry, err := valueToProto(req.Namespace, req.Key, val)
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
 	return &configpb.GetResponse{
-		Entry: valueToProto(req.Namespace, req.Key, val),
+		Entry: entry,
 	}, nil
 }
 
@@ -104,8 +113,13 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 		return nil, toGRPCError(err)
 	}
 
+	entry, err := valueToProto(req.Namespace, req.Key, result)
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
 	return &configpb.SetResponse{
-		Entry: valueToProto(req.Namespace, req.Key, result),
+		Entry: entry,
 	}, nil
 }
 
@@ -161,7 +175,11 @@ func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configp
 
 	entries := make([]*configpb.Entry, 0, len(page.Results()))
 	for key, val := range page.Results() {
-		entries = append(entries, valueToProto(req.Namespace, key, val))
+		entry, err := valueToProto(req.Namespace, key, val)
+		if err != nil {
+			return nil, toGRPCError(err)
+		}
+		entries = append(entries, entry)
 	}
 
 	return &configpb.ListResponse{
@@ -211,8 +229,13 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 				return nil
 			}
 
+			entry, err := valueToProto(event.Namespace, event.Key, event.Value)
+			if err != nil {
+				return toGRPCError(err)
+			}
+
 			resp := &configpb.WatchResponse{
-				Entry: valueToProto(event.Namespace, event.Key, event.Value),
+				Entry: entry,
 			}
 
 			switch event.Type {
@@ -253,12 +276,13 @@ func (s *Service) CheckAccess(ctx context.Context, req *configpb.CheckAccessRequ
 }
 
 // valueToProto converts a config.Value to a proto Entry.
-func valueToProto(namespace, key string, val config.Value) *configpb.Entry {
+// Returns an error if the value cannot be marshaled.
+func valueToProto(namespace, key string, val config.Value) (*configpb.Entry, error) {
 	if val == nil {
 		return &configpb.Entry{
 			Namespace: namespace,
 			Key:       key,
-		}
+		}, nil
 	}
 
 	entry := &configpb.Entry{
@@ -269,12 +293,11 @@ func valueToProto(namespace, key string, val config.Value) *configpb.Entry {
 	}
 
 	// Marshal value to bytes
-	if data, err := val.Marshal(); err != nil {
-		slog.Warn("failed to marshal config value",
-			"namespace", namespace, "key", key, "error", err)
-	} else {
-		entry.Value = data
+	data, err := val.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal value %s/%s: %w", namespace, key, err)
 	}
+	entry.Value = data
 
 	// Add metadata
 	if meta := val.Metadata(); meta != nil {
@@ -287,5 +310,5 @@ func valueToProto(namespace, key string, val config.Value) *configpb.Entry {
 		}
 	}
 
-	return entry
+	return entry, nil
 }

@@ -400,7 +400,10 @@ func TestToGRPCError(t *testing.T) {
 
 func TestValueToProto(t *testing.T) {
 	t.Run("nil value", func(t *testing.T) {
-		entry := valueToProto("ns", "key", nil)
+		entry, err := valueToProto("ns", "key", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if entry.Namespace != "ns" || entry.Key != "key" {
 			t.Errorf("expected ns/key, got %s/%s", entry.Namespace, entry.Key)
 		}
@@ -411,7 +414,10 @@ func TestValueToProto(t *testing.T) {
 
 	t.Run("with value", func(t *testing.T) {
 		val := config.NewValue("hello", config.WithValueType(config.TypeString))
-		entry := valueToProto("ns", "key", val)
+		entry, err := valueToProto("ns", "key", val)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if entry.Namespace != "ns" || entry.Key != "key" {
 			t.Errorf("expected ns/key, got %s/%s", entry.Namespace, entry.Key)
 		}
@@ -557,6 +563,173 @@ func TestStreamLoggingInterceptor(t *testing.T) {
 	err = interceptor(nil, nil, &grpc.StreamServerInfo{FullMethod: "/test"}, failHandler)
 	if err == nil {
 		t.Fatal("expected error from failing stream handler")
+	}
+}
+
+func TestNewService_NilStorePanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for nil store")
+		}
+	}()
+	NewService(nil)
+}
+
+func TestNewService_WithOptions(t *testing.T) {
+	store := memory.NewStore()
+	ctx := context.Background()
+	store.Connect(ctx)
+	defer store.Close(ctx)
+
+	auth := AllowAll()
+	svc := NewService(store, WithAuthorizer(auth))
+	if svc == nil {
+		t.Fatal("expected non-nil service")
+	}
+}
+
+func TestToGRPCError_WrappedErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{"wrapped not found", errors.New("wrapped: " + config.ErrNotFound.Error()), codes.Internal},
+		{"key not found wrapped", &config.KeyNotFoundError{Key: "k", Namespace: "ns"}, codes.NotFound},
+		{"key exists wrapped", &config.KeyExistsError{Key: "k", Namespace: "ns"}, codes.AlreadyExists},
+		{"type mismatch", &config.TypeMismatchError{Key: "k", Expected: config.TypeInt, Actual: config.TypeString}, codes.InvalidArgument},
+		{"invalid key", &config.InvalidKeyError{Key: "k/../x", Reason: "path traversal"}, codes.InvalidArgument},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toGRPCError(tt.err)
+			st, ok := status.FromError(got)
+			if !ok {
+				t.Fatalf("expected gRPC status error, got: %v", got)
+			}
+			if st.Code() != tt.code {
+				t.Errorf("code = %v, want %v", st.Code(), tt.code)
+			}
+		})
+	}
+}
+
+func TestService_Get_ClosedStore(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	_, err := svc.Get(ctx, &configpb.GetRequest{
+		Namespace: "test",
+		Key:       "key",
+	})
+	if err == nil {
+		t.Fatal("expected error for closed store")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Unavailable {
+		t.Errorf("expected Unavailable, got: %v", st.Code())
+	}
+}
+
+func TestService_Set_ClosedStore(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	_, err := svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "key",
+		Value:     []byte(`"v"`),
+		Codec:     "json",
+	})
+	if err == nil {
+		t.Fatal("expected error for closed store")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Unavailable {
+		t.Errorf("expected Unavailable, got: %v", st.Code())
+	}
+}
+
+func TestService_Delete_ClosedStore(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	_, err := svc.Delete(ctx, &configpb.DeleteRequest{
+		Namespace: "test",
+		Key:       "key",
+	})
+	if err == nil {
+		t.Fatal("expected error for closed store")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Unavailable {
+		t.Errorf("expected Unavailable, got: %v", st.Code())
+	}
+}
+
+func TestService_List_ClosedStore(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	_, err := svc.List(ctx, &configpb.ListRequest{
+		Namespace: "test",
+	})
+	if err == nil {
+		t.Fatal("expected error for closed store")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Unavailable {
+		t.Errorf("expected Unavailable, got: %v", st.Code())
+	}
+}
+
+func TestService_Delete_NotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.Delete(ctx, &configpb.DeleteRequest{
+		Namespace: "test",
+		Key:       "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for deleting nonexistent key")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.NotFound {
+		t.Errorf("expected NotFound, got: %v", st.Code())
+	}
+}
+
+func TestService_List_Empty(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	resp, err := svc.List(ctx, &configpb.ListRequest{
+		Namespace: "empty-ns",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(resp.Entries))
 	}
 }
 

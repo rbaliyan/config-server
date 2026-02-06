@@ -12,15 +12,14 @@ import (
 
 type options struct {
 	// Connection options
-	dialOpts       []grpc.DialOption
-	connectTimeout time.Duration
-	secure         bool
-	tlsConfig      *tls.Config
+	dialOpts  []grpc.DialOption
+	secure    bool
+	tlsConfig *tls.Config
 
 	// Retry/resilience options
-	maxRetries     int
-	retryBackoff   time.Duration
-	maxBackoff     time.Duration
+	maxRetries       int
+	retryBackoff     time.Duration
+	maxBackoff       time.Duration
 	enableCircuit    bool
 	circuitThreshold int
 	circuitTimeout   time.Duration
@@ -31,10 +30,9 @@ type options struct {
 	watchReconnectWait time.Duration
 	watchMaxErrors     int
 
-	// Health check options
-	healthCheckInterval time.Duration
-	keepaliveTime       time.Duration
-	keepaliveTimeout    time.Duration
+	// Keepalive options
+	keepaliveTime    time.Duration
+	keepaliveTimeout time.Duration
 
 	// Observability
 	onStateChange func(state ConnState)
@@ -69,19 +67,17 @@ func (s ConnState) String() string {
 
 func defaultOptions() *options {
 	return &options{
-		connectTimeout:      10 * time.Second,
-		maxRetries:          3,
-		retryBackoff:        100 * time.Millisecond,
-		maxBackoff:          5 * time.Second,
-		watchBufferSize:     100,
-		watchReconnect:      true,
-		watchReconnectWait:  time.Second,
-		watchMaxErrors:      10,
-		healthCheckInterval: 30 * time.Second,
-		keepaliveTime:       30 * time.Second,
-		keepaliveTimeout:    10 * time.Second,
-		circuitThreshold:    5,
-		circuitTimeout:      30 * time.Second,
+		maxRetries:         3,
+		retryBackoff:       100 * time.Millisecond,
+		maxBackoff:         5 * time.Second,
+		watchBufferSize:    100,
+		watchReconnect:     true,
+		watchReconnectWait: time.Second,
+		watchMaxErrors:     10,
+		keepaliveTime:      30 * time.Second,
+		keepaliveTimeout:   10 * time.Second,
+		circuitThreshold:   5,
+		circuitTimeout:     30 * time.Second,
 	}
 }
 
@@ -92,13 +88,6 @@ type Option func(*options)
 func WithDialOptions(opts ...grpc.DialOption) Option {
 	return func(o *options) {
 		o.dialOpts = append(o.dialOpts, opts...)
-	}
-}
-
-// WithConnectTimeout sets the timeout for initial connection.
-func WithConnectTimeout(d time.Duration) Option {
-	return func(o *options) {
-		o.connectTimeout = d
 	}
 }
 
@@ -161,13 +150,6 @@ func WithWatchReconnect(enabled bool, waitTime time.Duration) Option {
 	return func(o *options) {
 		o.watchReconnect = enabled
 		o.watchReconnectWait = waitTime
-	}
-}
-
-// WithHealthCheck configures periodic health checks.
-func WithHealthCheck(interval time.Duration) Option {
-	return func(o *options) {
-		o.healthCheckInterval = interval
 	}
 }
 
