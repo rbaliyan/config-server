@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"github.com/rbaliyan/config/memory"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -196,3 +199,279 @@ func TestService_DenyAllAuthorizer(t *testing.T) {
 		t.Errorf("expected PermissionDenied, got: %v", st.Code())
 	}
 }
+
+func TestService_CheckAccess(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
+		Namespace: "test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !resp.CanRead {
+		t.Error("expected CanRead to be true with AllowAll authorizer")
+	}
+	if !resp.CanWrite {
+		t.Error("expected CanWrite to be true with AllowAll authorizer")
+	}
+}
+
+func TestService_CheckAccess_DenyAll(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	defer store.Close(ctx)
+
+	svc := NewService(store) // DenyAll is default
+
+	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
+		Namespace: "test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.CanRead {
+		t.Error("expected CanRead to be false with DenyAll authorizer")
+	}
+	if resp.CanWrite {
+		t.Error("expected CanWrite to be false with DenyAll authorizer")
+	}
+}
+
+func TestService_Set_DefaultCodec(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	// Set without specifying codec should default to json
+	resp, err := svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "nocodec",
+		Value:     []byte(`"hello"`),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Entry == nil {
+		t.Fatal("expected entry")
+	}
+}
+
+func TestService_Set_WriteModes(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	// Create mode
+	_, err := svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "wm-key",
+		Value:     []byte(`"v1"`),
+		Codec:     "json",
+		WriteMode: configpb.WriteMode_WRITE_MODE_CREATE,
+	})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	// Create again should fail (already exists)
+	_, err = svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "wm-key",
+		Value:     []byte(`"v2"`),
+		Codec:     "json",
+		WriteMode: configpb.WriteMode_WRITE_MODE_CREATE,
+	})
+	if err == nil {
+		t.Fatal("expected error for duplicate create")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.AlreadyExists {
+		t.Errorf("expected AlreadyExists, got: %v", st.Code())
+	}
+
+	// Update mode
+	_, err = svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "wm-key",
+		Value:     []byte(`"v2"`),
+		Codec:     "json",
+		WriteMode: configpb.WriteMode_WRITE_MODE_UPDATE,
+	})
+	if err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	// Update nonexistent should fail
+	_, err = svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "nonexistent",
+		Value:     []byte(`"v"`),
+		Codec:     "json",
+		WriteMode: configpb.WriteMode_WRITE_MODE_UPDATE,
+	})
+	if err == nil {
+		t.Fatal("expected error for update of nonexistent key")
+	}
+}
+
+func TestService_List_Pagination(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	for i := 0; i < 5; i++ {
+		store.Set(ctx, "test", "key"+string(rune('A'+i)), config.NewValue(i))
+	}
+
+	// List with limit
+	resp, err := svc.List(ctx, &configpb.ListRequest{
+		Namespace: "test",
+		Limit:     2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(resp.Entries))
+	}
+	if resp.NextCursor == "" {
+		t.Error("expected non-empty next cursor")
+	}
+
+	// Next page
+	resp2, err := svc.List(ctx, &configpb.ListRequest{
+		Namespace: "test",
+		Limit:     2,
+		Cursor:    resp.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp2.Entries) != 2 {
+		t.Errorf("expected 2 entries on page 2, got %d", len(resp2.Entries))
+	}
+}
+
+func TestToGRPCError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{"nil", nil, codes.OK},
+		{"not found sentinel", config.ErrNotFound, codes.NotFound},
+		{"key exists sentinel", config.ErrKeyExists, codes.AlreadyExists},
+		{"invalid key sentinel", config.ErrInvalidKey, codes.InvalidArgument},
+		{"invalid namespace", config.ErrInvalidNamespace, codes.InvalidArgument},
+		{"invalid value", config.ErrInvalidValue, codes.InvalidArgument},
+		{"type mismatch", config.ErrTypeMismatch, codes.InvalidArgument},
+		{"read only", config.ErrReadOnly, codes.FailedPrecondition},
+		{"not connected", config.ErrStoreNotConnected, codes.Unavailable},
+		{"store closed", config.ErrStoreClosed, codes.Unavailable},
+		{"watch not supported", config.ErrWatchNotSupported, codes.Unimplemented},
+		{"codec not found", config.ErrCodecNotFound, codes.InvalidArgument},
+		{"key not found error", &config.KeyNotFoundError{Key: "k", Namespace: "ns"}, codes.NotFound},
+		{"key exists error", &config.KeyExistsError{Key: "k", Namespace: "ns"}, codes.AlreadyExists},
+		{"store error", &config.StoreError{Op: "get", Backend: "test", Key: "k", Err: errors.New("fail")}, codes.Internal},
+		{"unknown", errors.New("unknown"), codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toGRPCError(tt.err)
+			if tt.err == nil {
+				if got != nil {
+					t.Errorf("toGRPCError(nil) = %v, want nil", got)
+				}
+				return
+			}
+			st, ok := status.FromError(got)
+			if !ok {
+				t.Fatalf("expected gRPC status error, got: %v", got)
+			}
+			if st.Code() != tt.code {
+				t.Errorf("toGRPCError(%v) code = %v, want %v", tt.err, st.Code(), tt.code)
+			}
+		})
+	}
+}
+
+func TestValueToProto(t *testing.T) {
+	t.Run("nil value", func(t *testing.T) {
+		entry := valueToProto("ns", "key", nil)
+		if entry.Namespace != "ns" || entry.Key != "key" {
+			t.Errorf("expected ns/key, got %s/%s", entry.Namespace, entry.Key)
+		}
+		if len(entry.Value) != 0 {
+			t.Error("expected empty value for nil")
+		}
+	})
+
+	t.Run("with value", func(t *testing.T) {
+		val := config.NewValue("hello", config.WithValueType(config.TypeString))
+		entry := valueToProto("ns", "key", val)
+		if entry.Namespace != "ns" || entry.Key != "key" {
+			t.Errorf("expected ns/key, got %s/%s", entry.Namespace, entry.Key)
+		}
+		if len(entry.Value) == 0 {
+			t.Error("expected non-empty value")
+		}
+		if entry.Codec != "json" {
+			t.Errorf("expected json codec, got %s", entry.Codec)
+		}
+	})
+}
+
+func TestRecoveryInterceptor(t *testing.T) {
+	logger := slog.Default()
+	interceptor := RecoveryInterceptor(logger)
+
+	// Handler that panics
+	handler := func(ctx context.Context, req any) (any, error) {
+		panic("test panic")
+	}
+
+	resp, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, handler)
+	if resp != nil {
+		t.Errorf("expected nil response from panicking handler, got %v", resp)
+	}
+	if err == nil {
+		t.Fatal("expected error from panicking handler")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.Internal {
+		t.Errorf("expected Internal, got: %v", st.Code())
+	}
+}
+
+func TestLoggingInterceptor(t *testing.T) {
+	logger := slog.Default()
+	interceptor := LoggingInterceptor(logger)
+
+	// Successful handler
+	handler := func(ctx context.Context, req any) (any, error) {
+		return "ok", nil
+	}
+	resp, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "ok" {
+		t.Errorf("expected 'ok', got %v", resp)
+	}
+
+	// Failing handler
+	failHandler := func(ctx context.Context, req any) (any, error) {
+		return nil, errors.New("fail")
+	}
+	_, err = interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, failHandler)
+	if err == nil {
+		t.Fatal("expected error from failing handler")
+	}
+}
+

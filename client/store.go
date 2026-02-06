@@ -37,10 +37,11 @@ type RemoteStore struct {
 	addr string
 	opts *options
 
-	mu     sync.RWMutex
-	conn   *grpc.ClientConn
-	client configpb.ConfigServiceClient
-	state  atomic.Int32 // ConnState
+	mu      sync.RWMutex
+	conn    *grpc.ClientConn
+	client  configpb.ConfigServiceClient
+	state   atomic.Int32 // ConnState
+	stateMu sync.Mutex   // serializes state transitions and callbacks
 
 	// Circuit breaker state
 	circuitMu      sync.Mutex
@@ -79,10 +80,12 @@ func (s *RemoteStore) State() ConnState {
 }
 
 func (s *RemoteStore) setState(state ConnState) {
+	s.stateMu.Lock()
 	old := ConnState(s.state.Swap(int32(state)))
 	if old != state && s.opts.onStateChange != nil {
 		s.opts.onStateChange(state)
 	}
+	s.stateMu.Unlock()
 }
 
 // Connect establishes the connection to the config server.
@@ -104,14 +107,10 @@ func (s *RemoteStore) Connect(ctx context.Context) error {
 
 	s.setState(ConnStateConnecting)
 
-	// Apply connect timeout
-	connectCtx, cancel := context.WithTimeout(ctx, s.opts.connectTimeout)
-	defer cancel()
-
 	// Build dial options
 	dialOpts := s.opts.buildDialOpts()
 
-	conn, err := grpc.DialContext(connectCtx, s.addr, dialOpts...)
+	conn, err := grpc.NewClient(s.addr, dialOpts...)
 	if err != nil {
 		s.setState(ConnStateDisconnected)
 		return err
@@ -464,7 +463,7 @@ func (s *RemoteStore) watchLoop(
 	defer close(ch)
 	defer close(doneCh)
 
-	backoff := s.opts.retryBackoff
+	backoff := s.opts.watchReconnectWait
 	consecutiveErrors := 0
 
 	for {
@@ -524,10 +523,6 @@ func (s *RemoteStore) watchLoop(
 			continue // Will retry
 		}
 		client = newClient
-
-		// Successfully got a new client, reset backoff and error count
-		backoff = s.opts.retryBackoff
-		consecutiveErrors = 0
 	}
 }
 

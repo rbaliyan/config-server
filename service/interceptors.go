@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"runtime/debug"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -48,7 +49,8 @@ func RecoveryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 			if r := recover(); r != nil {
 				logger.Error("panic recovered",
 					"method", info.FullMethod,
-					"panic", r)
+					"panic", r,
+					"stack", string(debug.Stack()))
 				err = status.Errorf(codes.Internal, "internal error")
 			}
 		}()
@@ -63,7 +65,8 @@ func StreamRecoveryInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor
 			if r := recover(); r != nil {
 				logger.Error("panic recovered",
 					"method", info.FullMethod,
-					"panic", r)
+					"panic", r,
+					"stack", string(debug.Stack()))
 				err = status.Errorf(codes.Internal, "internal error")
 			}
 		}()

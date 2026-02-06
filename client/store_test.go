@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/rbaliyan/config"
+	configpb "github.com/rbaliyan/config-server/proto/config/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestRemoteStore_NotConnected(t *testing.T) {
@@ -415,6 +417,79 @@ func TestCircuitBreaker_CustomThreshold(t *testing.T) {
 	store.recordFailure()
 	if !store.isCircuitOpen() {
 		t.Error("Circuit should be open after 3 failures with threshold 3")
+	}
+}
+
+func TestProtoToValue(t *testing.T) {
+	t.Run("nil entry", func(t *testing.T) {
+		val := protoToValue(nil)
+		if val != nil {
+			t.Error("expected nil for nil entry")
+		}
+	})
+
+	t.Run("with value and metadata", func(t *testing.T) {
+		now := timestamppb.Now()
+		entry := &configpb.Entry{
+			Namespace: "ns",
+			Key:       "key",
+			Value:     []byte(`"hello"`),
+			Codec:     "json",
+			Version:   3,
+			Type:      int32(config.TypeString),
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		val := protoToValue(entry)
+		if val == nil {
+			t.Fatal("expected non-nil value")
+		}
+		s, err := val.String()
+		if err != nil {
+			t.Fatalf("String() error: %v", err)
+		}
+		if s != "hello" {
+			t.Errorf("String() = %q, want %q", s, "hello")
+		}
+		if val.Metadata().Version() != 3 {
+			t.Errorf("Version() = %d, want 3", val.Metadata().Version())
+		}
+	})
+
+	t.Run("without metadata", func(t *testing.T) {
+		entry := &configpb.Entry{
+			Namespace: "ns",
+			Key:       "key",
+			Value:     []byte(`42`),
+			Codec:     "json",
+		}
+		val := protoToValue(entry)
+		if val == nil {
+			t.Fatal("expected non-nil value")
+		}
+	})
+
+	t.Run("invalid codec fallback", func(t *testing.T) {
+		entry := &configpb.Entry{
+			Namespace: "ns",
+			Key:       "key",
+			Value:     []byte("not-valid-json"),
+			Codec:     "json",
+		}
+		val := protoToValue(entry)
+		if val == nil {
+			t.Fatal("expected non-nil value even with invalid data (fallback)")
+		}
+	})
+}
+
+func TestRemoteStore_WatchMaxErrors(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchMaxErrors(3),
+	)
+	if store.opts.watchMaxErrors != 3 {
+		t.Errorf("watchMaxErrors = %d, want 3", store.opts.watchMaxErrors)
 	}
 }
 
