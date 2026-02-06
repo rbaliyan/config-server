@@ -36,11 +36,12 @@ type sseWriter struct {
 	flusher http.Flusher
 }
 
-// writeEvent writes an SSE event frame. The data parameter must not contain
-// newlines — json.Marshal (the only caller's encoder) guarantees single-line output.
+// writeEvent writes an SSE event frame. Both eventType and data must be
+// single-line: newlines are stripped defensively to prevent frame injection.
 func (sw *sseWriter) writeEvent(eventType string, data []byte) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
+	eventType = sanitizeSSEField(eventType)
 	if _, err := fmt.Fprintf(sw.w, "event: %s\ndata: %s\n\n", eventType, data); err != nil {
 		return err
 	}
@@ -51,6 +52,7 @@ func (sw *sseWriter) writeEvent(eventType string, data []byte) error {
 func (sw *sseWriter) writeComment(comment string) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
+	comment = sanitizeSSEField(comment)
 	if _, err := fmt.Fprintf(sw.w, ": %s\n\n", comment); err != nil {
 		return err
 	}
@@ -299,14 +301,23 @@ func httpHeadersToMetadata(ctx context.Context, r *http.Request) context.Context
 
 // isForwardableHeader returns true for headers that should be propagated
 // as gRPC metadata. This allowlists auth, tracing, and custom headers
-// while excluding hop-by-hop and transport-level headers.
+// while excluding hop-by-hop, transport, and proxy headers.
 func isForwardableHeader(lower string) bool {
 	switch lower {
-	case "authorization", "cookie", "x-request-id", "x-correlation-id":
+	case "authorization":
 		return true
 	}
-	// Forward custom headers (x-* prefix) commonly used for auth/context.
-	return strings.HasPrefix(lower, "x-")
+	// Forward x-* custom headers used for auth/context, but exclude
+	// well-known proxy headers that should not be trusted from clients.
+	if strings.HasPrefix(lower, "x-") {
+		switch lower {
+		case "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+			"x-forwarded-port", "x-real-ip":
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 // runHeartbeat sends SSE comment lines at the given interval to keep
@@ -327,12 +338,20 @@ func runHeartbeat(ctx context.Context, sw *sseWriter, interval time.Duration) {
 	}
 }
 
-// writeSSEError writes an SSE error event. The write error is intentionally
-// discarded because if the client has disconnected, there is nothing more to do.
+// writeSSEError writes an SSE error event. For client-actionable errors
+// (auth, validation), the gRPC message is forwarded. For internal errors,
+// a generic message is sent to avoid leaking implementation details.
+// The write error is intentionally discarded because if the client has
+// disconnected, there is nothing more to do.
 func writeSSEError(sw *sseWriter, err error) {
-	msg := err.Error()
+	msg := "internal error"
 	if st, ok := status.FromError(err); ok {
-		msg = st.Message()
+		switch st.Code() {
+		case codes.PermissionDenied, codes.Unauthenticated,
+			codes.InvalidArgument, codes.NotFound, codes.AlreadyExists,
+			codes.FailedPrecondition, codes.Unimplemented:
+			msg = st.Message()
+		}
 	}
 	_ = sw.writeEvent("error", mustJSON(map[string]string{"error": msg}))
 }
@@ -353,6 +372,10 @@ func writeHTTPError(w http.ResponseWriter, err error) {
 		httpCode = http.StatusUnauthorized
 	case codes.InvalidArgument:
 		httpCode = http.StatusBadRequest
+	case codes.NotFound:
+		httpCode = http.StatusNotFound
+	case codes.AlreadyExists:
+		httpCode = http.StatusConflict
 	case codes.Unimplemented:
 		httpCode = http.StatusNotImplemented
 	case codes.Unavailable:
@@ -371,6 +394,17 @@ func mustJSON(v any) []byte {
 		return []byte(`{"error":"internal error"}`)
 	}
 	return data
+}
+
+// sanitizeSSEField strips carriage returns and newlines from s to prevent
+// SSE frame injection. All current callers pass safe literals or enum-derived
+// strings, but this provides defense-in-depth.
+func sanitizeSSEField(s string) string {
+	if !strings.ContainsAny(s, "\r\n") {
+		return s
+	}
+	r := strings.NewReplacer("\r\n", "", "\r", "", "\n", "")
+	return r.Replace(s)
 }
 
 // composeHandlers creates a single http.Handler that routes SSE watch

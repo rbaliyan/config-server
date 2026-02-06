@@ -775,6 +775,8 @@ func TestWriteHTTPError(t *testing.T) {
 		{"PermissionDenied", status.Error(codes.PermissionDenied, "forbidden"), http.StatusForbidden},
 		{"Unauthenticated", status.Error(codes.Unauthenticated, "no creds"), http.StatusUnauthorized},
 		{"InvalidArgument", status.Error(codes.InvalidArgument, "bad input"), http.StatusBadRequest},
+		{"NotFound", status.Error(codes.NotFound, "missing"), http.StatusNotFound},
+		{"AlreadyExists", status.Error(codes.AlreadyExists, "dup"), http.StatusConflict},
 		{"Unimplemented", status.Error(codes.Unimplemented, "not impl"), http.StatusNotImplemented},
 		{"Unavailable", status.Error(codes.Unavailable, "down"), http.StatusServiceUnavailable},
 		{"Internal", status.Error(codes.Internal, "oops"), http.StatusInternalServerError},
@@ -969,9 +971,11 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer token123")
 	r.Header.Set("X-Role", "admin")
 	r.Header.Set("X-Request-Id", "req-42")
-	r.Header.Set("Connection", "keep-alive")       // hop-by-hop, should be excluded
-	r.Header.Set("Accept-Encoding", "gzip")         // transport, should be excluded
-	r.Header.Set("Content-Type", "application/json") // should be excluded
+	r.Header.Set("X-Forwarded-For", "1.2.3.4")       // proxy header, should be excluded
+	r.Header.Set("Connection", "keep-alive")           // hop-by-hop, should be excluded
+	r.Header.Set("Accept-Encoding", "gzip")            // transport, should be excluded
+	r.Header.Set("Content-Type", "application/json")   // should be excluded
+	r.Header.Set("Cookie", "session=abc")              // should be excluded
 
 	ctx := httpHeadersToMetadata(context.Background(), r)
 
@@ -991,15 +995,11 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 		t.Errorf("x-request-id = %v, want [req-42]", got)
 	}
 
-	// Hop-by-hop and transport headers should be excluded.
-	if got := md.Get("connection"); len(got) != 0 {
-		t.Errorf("connection should be excluded, got %v", got)
-	}
-	if got := md.Get("accept-encoding"); len(got) != 0 {
-		t.Errorf("accept-encoding should be excluded, got %v", got)
-	}
-	if got := md.Get("content-type"); len(got) != 0 {
-		t.Errorf("content-type should be excluded, got %v", got)
+	// Proxy, hop-by-hop, and transport headers should be excluded.
+	for _, excluded := range []string{"x-forwarded-for", "connection", "accept-encoding", "content-type", "cookie"} {
+		if got := md.Get(excluded); len(got) != 0 {
+			t.Errorf("%s should be excluded, got %v", excluded, got)
+		}
 	}
 }
 
@@ -1009,11 +1009,18 @@ func TestIsForwardableHeader(t *testing.T) {
 		want   bool
 	}{
 		{"authorization", true},
-		{"cookie", true},
 		{"x-request-id", true},
 		{"x-correlation-id", true},
 		{"x-custom-anything", true},
 		{"x-role", true},
+		// Excluded: proxy headers that clients could spoof.
+		{"x-forwarded-for", false},
+		{"x-forwarded-host", false},
+		{"x-forwarded-proto", false},
+		{"x-forwarded-port", false},
+		{"x-real-ip", false},
+		// Excluded: hop-by-hop and transport headers.
+		{"cookie", false},
 		{"connection", false},
 		{"transfer-encoding", false},
 		{"accept-encoding", false},
@@ -1025,5 +1032,73 @@ func TestIsForwardableHeader(t *testing.T) {
 		if got := isForwardableHeader(tt.header); got != tt.want {
 			t.Errorf("isForwardableHeader(%q) = %v, want %v", tt.header, got, tt.want)
 		}
+	}
+}
+
+func TestSanitizeSSEField(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"set", "set"},
+		{"heartbeat", "heartbeat"},
+		{"has\nnewline", "hasnewline"},
+		{"has\r\ncrlf", "hascrlf"},
+		{"has\rcarriage", "hascarriage"},
+		{"clean", "clean"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := sanitizeSSEField(tt.input); got != tt.want {
+			t.Errorf("sanitizeSSEField(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestWriteSSEError_Sanitization(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantMsg string
+	}{
+		{
+			name:    "client-actionable PermissionDenied",
+			err:     status.Error(codes.PermissionDenied, "access denied"),
+			wantMsg: "access denied",
+		},
+		{
+			name:    "client-actionable InvalidArgument",
+			err:     status.Error(codes.InvalidArgument, "bad key format"),
+			wantMsg: "bad key format",
+		},
+		{
+			name:    "internal error sanitized",
+			err:     status.Error(codes.Internal, "db connection failed: host=10.0.0.1"),
+			wantMsg: "internal error",
+		},
+		{
+			name:    "unavailable error sanitized",
+			err:     status.Error(codes.Unavailable, "connection refused"),
+			wantMsg: "internal error",
+		},
+		{
+			name:    "non-gRPC error sanitized",
+			err:     fmt.Errorf("raw error with details"),
+			wantMsg: "internal error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := newSyncRecorder()
+			sw := &sseWriter{w: rec, flusher: rec}
+			writeSSEError(sw, tt.err)
+
+			body := rec.bodyString()
+			if !strings.Contains(body, tt.wantMsg) {
+				t.Errorf("expected %q in body, got:\n%s", tt.wantMsg, body)
+			}
+			if tt.wantMsg == "internal error" && strings.Contains(body, "connection") {
+				t.Errorf("internal details leaked in body:\n%s", body)
+			}
+		})
 	}
 }
