@@ -1073,12 +1073,12 @@ func (m *mockWatchStream) RecvMsg(any) error            { return nil }
 
 // mockConfigClient implements configpb.ConfigServiceClient for testing watchLoop.
 type mockConfigClient struct {
-	mu          sync.Mutex
-	watchCalls  int
-	failCount   int            // number of Watch calls to fail before succeeding
-	watchErr    error          // error to return from Watch
-	streams     []*mockWatchStream // streams to return on success
-	streamIdx   int
+	mu         sync.Mutex
+	watchCalls int
+	failCount  int                // number of Watch calls to fail before succeeding
+	watchErr   error              // error to return from Watch
+	streams    []*mockWatchStream // streams to return on success
+	streamIdx  int
 }
 
 func (m *mockConfigClient) Get(ctx context.Context, in *configpb.GetRequest, opts ...grpc.CallOption) (*configpb.GetResponse, error) {
@@ -1336,7 +1336,7 @@ func TestWatchLoop_StoreCloseDuringWatch(t *testing.T) {
 	mockClient := &mockConfigClient{
 		streams: []*mockWatchStream{
 			{
-				ctx: ctx,
+				ctx:       ctx,
 				responses: nil,
 				err:       nil, // Will return EOF after no responses, but we want to block
 			},

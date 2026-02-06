@@ -797,11 +797,11 @@ func (m *mockWatchServer) Send(resp *configpb.WatchResponse) error {
 	return nil
 }
 
-func (m *mockWatchServer) SetHeader(metadata.MD) error { return nil }
+func (m *mockWatchServer) SetHeader(metadata.MD) error  { return nil }
 func (m *mockWatchServer) SendHeader(metadata.MD) error { return nil }
 func (m *mockWatchServer) SetTrailer(metadata.MD)       {}
-func (m *mockWatchServer) SendMsg(any) error             { return nil }
-func (m *mockWatchServer) RecvMsg(any) error             { return nil }
+func (m *mockWatchServer) SendMsg(any) error            { return nil }
+func (m *mockWatchServer) RecvMsg(any) error            { return nil }
 
 func TestService_Watch_AllowAll(t *testing.T) {
 	ctx := context.Background()
@@ -1184,5 +1184,3 @@ func (a *namespaceAuthorizer) Authorize(_ context.Context, req AuthRequest) erro
 	}
 	return status.Errorf(codes.PermissionDenied, "namespace %q not allowed", req.Namespace)
 }
-
-

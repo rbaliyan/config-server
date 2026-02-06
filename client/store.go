@@ -45,9 +45,9 @@ type RemoteStore struct {
 	stateMu sync.Mutex   // serializes state transitions and callbacks
 
 	// Circuit breaker state
-	circuitMu      sync.Mutex
-	circuitOpen    bool
-	circuitOpenAt  time.Time
+	circuitMu       sync.Mutex
+	circuitOpen     bool
+	circuitOpenAt   time.Time
 	consecutiveFail int
 
 	// Shutdown

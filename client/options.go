@@ -47,7 +47,7 @@ const (
 	ConnStateDisconnected ConnState = iota
 	ConnStateConnecting
 	ConnStateConnected
-	_                    // reserved
+	_ // reserved
 	ConnStateClosed
 )
 
