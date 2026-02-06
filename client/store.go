@@ -56,7 +56,12 @@ type RemoteStore struct {
 }
 
 // NewRemoteStore creates a new RemoteStore connecting to the given address.
+// Returns an error if addr is empty.
 func NewRemoteStore(addr string, opts ...Option) (*RemoteStore, error) {
+	if addr == "" {
+		return nil, errors.New("config-server: address must not be empty")
+	}
+
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(o)
@@ -90,7 +95,7 @@ func (s *RemoteStore) setState(state ConnState) {
 }
 
 // Connect establishes the connection to the config server.
-// It respects the context deadline and configured timeout.
+// The context is reserved for future use.
 func (s *RemoteStore) Connect(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

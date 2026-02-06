@@ -25,14 +25,16 @@ func NewService(store config.Store, opts ...Option) *Service {
 	if store == nil {
 		panic("config-server: NewService requires a non-nil store")
 	}
-	s := &Service{
-		store:      store,
+	o := &serviceOptions{
 		authorizer: DenyAll(), // Safe default
 	}
 	for _, opt := range opts {
-		opt(s)
+		opt(o)
 	}
-	return s
+	return &Service{
+		store:      store,
+		authorizer: o.authorizer,
+	}
 }
 
 // validateNamespaceKey checks that namespace and key are non-empty.

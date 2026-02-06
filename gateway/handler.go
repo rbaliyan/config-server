@@ -3,6 +3,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -24,6 +25,10 @@ import (
 //	handler, _ := gateway.NewHandler(ctx, "config-server:9090", gateway.WithTLS(nil))
 //	http.Handle("/api/", http.StripPrefix("/api", handler))
 func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (http.Handler, error) {
+	if grpcAddr == "" {
+		return nil, errors.New("gateway: gRPC address must not be empty")
+	}
+
 	o := &options{}
 	for _, opt := range opts {
 		opt(o)
