@@ -106,7 +106,7 @@ func (s *RemoteStore) Connect(ctx context.Context) error {
 
 	// Close existing connection if any
 	if s.conn != nil {
-		s.conn.Close()
+		_ = s.conn.Close()
 		s.conn = nil
 		s.client = nil
 	}

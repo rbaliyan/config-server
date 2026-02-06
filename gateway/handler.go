@@ -70,7 +70,7 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 	mux := runtime.NewServeMux(o.muxOpts...)
 
 	if err := configpb.RegisterConfigServiceHandler(ctx, mux, conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 
@@ -95,7 +95,7 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 		case <-ctx.Done():
 		case <-h.done:
 		}
-		h.Close()
+		_ = h.Close()
 	}()
 
 	return h, nil

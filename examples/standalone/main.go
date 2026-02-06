@@ -30,13 +30,13 @@ func main() {
 	if err := store.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect store: %v", err)
 	}
-	defer store.Close(ctx)
+	defer func() { _ = store.Close(ctx) }()
 
 	// Seed some initial data
-	store.Set(ctx, "default", "app/name", config.NewValue("My App"))
-	store.Set(ctx, "default", "app/version", config.NewValue("1.0.0"))
-	store.Set(ctx, "default", "database/host", config.NewValue("localhost"))
-	store.Set(ctx, "default", "database/port", config.NewValue(5432))
+	_, _ = store.Set(ctx, "default", "app/name", config.NewValue("My App"))
+	_, _ = store.Set(ctx, "default", "app/version", config.NewValue("1.0.0"))
+	_, _ = store.Set(ctx, "default", "database/host", config.NewValue("localhost"))
+	_, _ = store.Set(ctx, "default", "database/port", config.NewValue(5432))
 
 	// Create the config service with AllowAll authorizer (for demo only!)
 	configSvc := service.NewService(store,
@@ -92,5 +92,5 @@ func main() {
 	logger.Info("shutting down...")
 
 	grpcServer.GracefulStop()
-	httpServer.Shutdown(context.Background())
+	_ = httpServer.Shutdown(context.Background())
 }

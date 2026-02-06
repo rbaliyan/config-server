@@ -38,7 +38,7 @@ func main() {
 	if err := mgr.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect: %v", err)
 	}
-	defer mgr.Close(ctx)
+	defer func() { _ = mgr.Close(ctx) }()
 
 	// Access configuration through namespaces
 	cfg := mgr.Namespace("default")

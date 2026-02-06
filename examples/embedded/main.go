@@ -31,11 +31,11 @@ func main() {
 	if err := store.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect store: %v", err)
 	}
-	defer store.Close(ctx)
+	defer func() { _ = store.Close(ctx) }()
 
 	// Seed data
-	store.Set(ctx, "production", "api/key", config.NewValue("secret-key"))
-	store.Set(ctx, "staging", "api/key", config.NewValue("staging-key"))
+	_, _ = store.Set(ctx, "production", "api/key", config.NewValue("secret-key"))
+	_, _ = store.Set(ctx, "staging", "api/key", config.NewValue("staging-key"))
 
 	// Create config service with custom authorizer
 	configSvc := service.NewService(store,

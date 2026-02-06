@@ -51,7 +51,7 @@ fmt:
 
 # Lint code
 lint:
-    go vet ./...
+    golangci-lint run ./...
 
 # Run vulnerability check
 vulncheck:
