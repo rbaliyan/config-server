@@ -18,22 +18,22 @@ import (
 type Handler struct {
 	http.Handler
 	closeOnce sync.Once
+	closeErr  error
 	conn      *grpc.ClientConn // nil for in-process handlers
 	done      chan struct{}
 }
 
 // Close releases resources held by the handler.
 // For remote handlers, this closes the gRPC connection to the backend.
-// Close is safe to call multiple times.
+// Close is safe to call multiple times; all calls return the same error.
 func (h *Handler) Close() error {
-	var err error
 	h.closeOnce.Do(func() {
 		close(h.done)
 		if h.conn != nil {
-			err = h.conn.Close()
+			h.closeErr = h.conn.Close()
 		}
 	})
-	return err
+	return h.closeErr
 }
 
 // NewHandler creates a Handler that proxies to the gRPC service.

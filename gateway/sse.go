@@ -79,6 +79,12 @@ func (s *sseWatchStream) Context() context.Context {
 }
 
 func (s *sseWatchStream) Send(resp *configpb.WatchResponse) error {
+	return sendSSEResponse(s.sw, resp)
+}
+
+// sendSSEResponse converts a WatchResponse to an SSE event and writes it.
+// Used by both the in-process stream adapter and the remote relay loop.
+func sendSSEResponse(sw *sseWriter, resp *configpb.WatchResponse) error {
 	evt := responseToSSEEvent(resp)
 
 	data, err := json.Marshal(evt)
@@ -86,9 +92,11 @@ func (s *sseWatchStream) Send(resp *configpb.WatchResponse) error {
 		return fmt.Errorf("marshal SSE event: %w", err)
 	}
 
-	return s.sw.writeEvent(strings.ToLower(evt.Type), data)
+	return sw.writeEvent(strings.ToLower(evt.Type), data)
 }
 
+// No-op stubs to satisfy grpc.ServerStream. The SSE adapter only uses
+// Context() and Send(); metadata and raw message methods are unused.
 func (s *sseWatchStream) SetHeader(metadata.MD) error  { return nil }
 func (s *sseWatchStream) SendHeader(metadata.MD) error  { return nil }
 func (s *sseWatchStream) SetTrailer(metadata.MD)        {}
@@ -131,6 +139,7 @@ func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
 func writeSSEHeaders(w http.ResponseWriter, flusher http.Flusher) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no") // Prevent nginx proxy buffering.
 	flusher.Flush()
 }
 
@@ -231,14 +240,7 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 				return
 			}
 
-			evt := responseToSSEEvent(resp)
-			data, err := json.Marshal(evt)
-			if err != nil {
-				writeSSEError(sw, err)
-				return
-			}
-
-			if err := sw.writeEvent(strings.ToLower(evt.Type), data); err != nil {
+			if err := sendSSEResponse(sw, resp); err != nil {
 				return
 			}
 		}

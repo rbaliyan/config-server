@@ -386,6 +386,36 @@ func TestSSEWatch_Headers(t *testing.T) {
 	if cc := result.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Errorf("Cache-Control = %q, want no-cache", cc)
 	}
+	if xab := result.Header().Get("X-Accel-Buffering"); xab != "no" {
+		t.Errorf("X-Accel-Buffering = %q, want no", xab)
+	}
+}
+
+// nonFlushWriter is an http.ResponseWriter that does not implement http.Flusher.
+type nonFlushWriter struct {
+	code int
+	body strings.Builder
+	h    http.Header
+}
+
+func (w *nonFlushWriter) Header() http.Header        { return w.h }
+func (w *nonFlushWriter) Write(b []byte) (int, error) { return w.body.Write(b) }
+func (w *nonFlushWriter) WriteHeader(code int)        { w.code = code }
+
+func TestSSEWatch_NoFlusher(t *testing.T) {
+	handler, _ := setupSSETest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+	w := &nonFlushWriter{code: http.StatusOK, h: make(http.Header)}
+
+	handler.ServeHTTP(w, req)
+
+	if w.code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.code)
+	}
+	if !strings.Contains(w.body.String(), "streaming not supported") {
+		t.Errorf("body = %q, want 'streaming not supported'", w.body.String())
+	}
 }
 
 func TestSSEWatch_Preamble(t *testing.T) {
