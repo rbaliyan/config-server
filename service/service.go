@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"io"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
@@ -167,7 +166,7 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 			return ctx.Err()
 		case event, ok := <-ch:
 			if !ok {
-				return io.EOF
+				return nil
 			}
 
 			resp := &configpb.WatchResponse{

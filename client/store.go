@@ -524,6 +524,10 @@ func (s *RemoteStore) watchLoop(
 			continue // Will retry
 		}
 		client = newClient
+
+		// Successfully got a new client, reset backoff and error count
+		backoff = s.opts.retryBackoff
+		consecutiveErrors = 0
 	}
 }
 
@@ -551,6 +555,10 @@ func (s *RemoteStore) watchStream(
 				return nil // Context cancelled
 			}
 			return fromGRPCError(err)
+		}
+
+		if resp.Entry == nil {
+			continue
 		}
 
 		event := config.ChangeEvent{
