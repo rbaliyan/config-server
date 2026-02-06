@@ -131,7 +131,6 @@ func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
 func writeSSEHeaders(w http.ResponseWriter, flusher http.Flusher) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
 	flusher.Flush()
 }
 
@@ -157,11 +156,6 @@ func writeStreamPreamble(sw *sseWriter) {
 // it can detect authorization failures — both paths share this tradeoff.
 func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -200,11 +194,6 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 // over a gRPC connection and relays responses as SSE events.
 func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -316,11 +305,11 @@ func writeHTTPError(w http.ResponseWriter, err error) {
 	http.Error(w, st.Message(), httpCode)
 }
 
-// mustJSON marshals v to JSON, returning "null" on error.
+// mustJSON marshals v to JSON, returning a fallback error object on failure.
 func mustJSON(v any) []byte {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return []byte("null")
+		return []byte(`{"error":"internal error"}`)
 	}
 	return data
 }

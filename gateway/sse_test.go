@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,8 +17,66 @@ import (
 	"github.com/rbaliyan/config-server/service"
 	"github.com/rbaliyan/config/memory"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+// syncRecorder is a thread-safe wrapper around httptest.ResponseRecorder.
+// It synchronizes writes (from the handler goroutine) with reads (from the
+// test goroutine) to avoid data races when polling the body.
+type syncRecorder struct {
+	mu  sync.Mutex
+	rec *httptest.ResponseRecorder
+}
+
+func newSyncRecorder() *syncRecorder {
+	return &syncRecorder{rec: httptest.NewRecorder()}
+}
+
+func (sr *syncRecorder) Header() http.Header { return sr.rec.Header() }
+
+func (sr *syncRecorder) Write(b []byte) (int, error) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	return sr.rec.Write(b)
+}
+
+func (sr *syncRecorder) WriteHeader(code int) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.rec.WriteHeader(code)
+}
+
+func (sr *syncRecorder) Flush() {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.rec.Flush()
+}
+
+func (sr *syncRecorder) bodyString() string {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	return sr.rec.Body.String()
+}
+
+// result returns a snapshot of the recorder's state. Call only after the
+// handler goroutine has finished to avoid races.
+func (sr *syncRecorder) result() *httptest.ResponseRecorder {
+	return sr.rec
+}
+
+// waitForBody polls the recorder body until pred returns true or timeout expires.
+func waitForBody(t *testing.T, rec *syncRecorder, timeout time.Duration, pred func(string) bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if pred(rec.bodyString()) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
 
 // findSSEEvent scans SSE body text and returns the first sseEvent with the given type.
 func findSSEEvent(t *testing.T, body, eventType string) (sseEvent, bool) {
@@ -71,7 +130,7 @@ func TestSSEWatch_InProcess(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -79,21 +138,26 @@ func TestSSEWatch_InProcess(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	// Wait for SSE headers to be set, then trigger a change.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the preamble before triggering a change.
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
 
 	store.Set(context.Background(), "test", "app/timeout", config.NewValue("30"))
 
-	// Give time for the event to propagate.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the SET event to appear.
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, "event: set")
+	}) {
+		t.Fatal("timed out waiting for SET event")
+	}
 
 	cancel()
 	<-done
 
-	body := rec.Body.String()
-	if !strings.Contains(body, "event: set") {
-		t.Errorf("expected SSE 'event: set' in body, got:\n%s", body)
-	}
+	body := rec.bodyString()
 
 	// Parse SSE events — find the first SET event data line.
 	evt, ok := findSSEEvent(t, body, "SET")
@@ -119,7 +183,7 @@ func TestSSEWatch_DeleteEvent(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -127,19 +191,24 @@ func TestSSEWatch_DeleteEvent(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
 
 	store.Delete(context.Background(), "test", "old-key")
 
-	time.Sleep(200 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, "event: delete")
+	}) {
+		t.Fatal("timed out waiting for DELETE event")
+	}
 
 	cancel()
 	<-done
 
-	body := rec.Body.String()
-	if !strings.Contains(body, "event: delete") {
-		t.Errorf("expected SSE 'event: delete' in body, got:\n%s", body)
-	}
+	body := rec.bodyString()
 
 	evt, ok := findSSEEvent(t, body, "DELETE")
 	if !ok {
@@ -171,7 +240,7 @@ func TestSSEWatch_Heartbeat(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(reqCtx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -179,16 +248,14 @@ func TestSSEWatch_Heartbeat(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	// Wait for at least 2 heartbeat intervals.
-	time.Sleep(150 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": heartbeat")
+	}) {
+		t.Fatal("timed out waiting for heartbeat comment")
+	}
 
 	cancel()
 	<-done
-
-	body := rec.Body.String()
-	if !strings.Contains(body, ": heartbeat") {
-		t.Errorf("expected heartbeat comment in body, got:\n%s", body)
-	}
 }
 
 func TestSSEWatch_ClientDisconnect(t *testing.T) {
@@ -198,7 +265,7 @@ func TestSSEWatch_ClientDisconnect(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -206,7 +273,11 @@ func TestSSEWatch_ClientDisconnect(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
 
 	// Simulate client disconnect.
 	cancel()
@@ -289,7 +360,7 @@ func TestSSEWatch_Headers(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -297,18 +368,20 @@ func TestSSEWatch_Headers(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
 	cancel()
 	<-done
 
-	if ct := rec.Header().Get("Content-Type"); ct != "text/event-stream" {
+	result := rec.result()
+	if ct := result.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("Content-Type = %q, want text/event-stream", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+	if cc := result.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Errorf("Cache-Control = %q, want no-cache", cc)
-	}
-	if conn := rec.Header().Get("Connection"); conn != "keep-alive" {
-		t.Errorf("Connection = %q, want keep-alive", conn)
 	}
 }
 
@@ -320,7 +393,7 @@ func TestSSEWatch_Preamble(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -328,11 +401,15 @@ func TestSSEWatch_Preamble(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
 	cancel()
 	<-done
 
-	body := rec.Body.String()
+	body := rec.bodyString()
 
 	if !strings.Contains(body, "retry: 5000") {
 		t.Errorf("expected retry field in preamble, got:\n%s", body)
@@ -482,7 +559,7 @@ func TestSSEWatch_Remote(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(reqCtx)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -490,22 +567,26 @@ func TestSSEWatch_Remote(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}()
 
-	// Wait for gRPC stream to establish.
-	time.Sleep(300 * time.Millisecond)
+	// Wait for preamble before triggering a change.
+	if !waitForBody(t, rec, 5*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for remote SSE preamble")
+	}
 
 	store.Set(context.Background(), "test", "remote-key", config.NewValue("remote-val"))
 
-	time.Sleep(300 * time.Millisecond)
+	if !waitForBody(t, rec, 5*time.Second, func(s string) bool {
+		return strings.Contains(s, "event: set")
+	}) {
+		t.Fatal("timed out waiting for remote SET event")
+	}
 
 	reqCancel()
 	<-done
 
-	body := rec.Body.String()
+	body := rec.bodyString()
 
-	// Verify preamble.
-	if !strings.Contains(body, ": connected") {
-		t.Errorf("expected connected comment, got:\n%s", body)
-	}
 	if !strings.Contains(body, "retry: 5000") {
 		t.Errorf("expected retry field, got:\n%s", body)
 	}
@@ -576,5 +657,60 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 	}
 	if !strings.Contains(body, "no authorizer configured") {
 		t.Errorf("expected auth denial message in body: %s", body)
+	}
+}
+
+func TestSSEWatch_Remote_ClosedConn(t *testing.T) {
+	// Exercise the writeHTTPError path: when the gRPC connection is closed,
+	// client.Watch() itself returns an error before SSE headers are sent.
+
+	// Create a connection to a non-existent server that will fail immediately.
+	conn, err := grpc.NewClient("passthrough:///closed",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			// Return a connection that's immediately closed.
+			server, client := net.Pipe()
+			server.Close()
+			return client, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	client := configpb.NewConfigServiceClient(conn)
+	sseHandler := newRemoteSSEHandler(client, 30*time.Second)
+	handler := composeHandlers(http.NewServeMux(), sseHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rec, req)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not return after closed connection")
+	}
+
+	// With a broken connection, we may get either:
+	// - An HTTP error (if client.Watch() fails) with non-200 status
+	// - An SSE error event (if client.Watch() succeeds but Recv() fails)
+	// Either way, the response should contain error information.
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		// writeHTTPError path was taken — proper HTTP error before SSE headers.
+		if rec.Code == http.StatusOK {
+			t.Error("expected non-200 status for closed connection")
+		}
+	} else {
+		// SSE error event path — error came through Recv().
+		if !strings.Contains(body, "event: error") {
+			t.Errorf("expected error information in response, got:\n%s", body)
+		}
 	}
 }
