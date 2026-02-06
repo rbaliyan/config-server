@@ -136,8 +136,8 @@ func writeSSEHeaders(w http.ResponseWriter, flusher http.Flusher) {
 
 // writeStreamPreamble sends the initial SSE stream preamble: a retry hint
 // for client reconnection and a connection confirmation comment.
-func writeStreamPreamble(sw *sseWriter) {
-	_ = sw.writeRaw("retry: 5000\n\n: connected\n\n")
+func writeStreamPreamble(sw *sseWriter) error {
+	return sw.writeRaw("retry: 5000\n\n: connected\n\n")
 }
 
 // newInProcessSSEHandler creates an HTTP handler that calls svc.Watch directly
@@ -171,7 +171,9 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 		defer cancel()
 
 		sw := &sseWriter{w: w, flusher: flusher}
-		writeStreamPreamble(sw)
+		if err := writeStreamPreamble(sw); err != nil {
+			return
+		}
 
 		stream := &sseWatchStream{
 			ctx: ctx,
@@ -215,7 +217,9 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 		writeSSEHeaders(w, flusher)
 
 		sw := &sseWriter{w: w, flusher: flusher}
-		writeStreamPreamble(sw)
+		if err := writeStreamPreamble(sw); err != nil {
+			return
+		}
 
 		// Start heartbeat goroutine.
 		go runHeartbeat(ctx, sw, heartbeat)

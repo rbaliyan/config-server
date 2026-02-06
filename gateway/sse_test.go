@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,9 @@ import (
 	"github.com/rbaliyan/config-server/service"
 	"github.com/rbaliyan/config/memory"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -702,15 +705,79 @@ func TestSSEWatch_Remote_ClosedConn(t *testing.T) {
 	// - An SSE error event (if client.Watch() succeeds but Recv() fails)
 	// Either way, the response should contain error information.
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK {
-		// writeHTTPError path was taken — proper HTTP error before SSE headers.
-		if rec.Code == http.StatusOK {
-			t.Error("expected non-200 status for closed connection")
-		}
-	} else {
+	if rec.Code == http.StatusOK {
 		// SSE error event path — error came through Recv().
 		if !strings.Contains(body, "event: error") {
-			t.Errorf("expected error information in response, got:\n%s", body)
+			t.Errorf("expected SSE error event in response, got:\n%s", body)
 		}
 	}
+	// Non-200 means writeHTTPError path was taken — valid either way.
+}
+
+func TestWriteHTTPError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode int
+	}{
+		{"PermissionDenied", status.Error(codes.PermissionDenied, "forbidden"), http.StatusForbidden},
+		{"Unauthenticated", status.Error(codes.Unauthenticated, "no creds"), http.StatusUnauthorized},
+		{"InvalidArgument", status.Error(codes.InvalidArgument, "bad input"), http.StatusBadRequest},
+		{"Unimplemented", status.Error(codes.Unimplemented, "not impl"), http.StatusNotImplemented},
+		{"Unavailable", status.Error(codes.Unavailable, "down"), http.StatusServiceUnavailable},
+		{"Internal", status.Error(codes.Internal, "oops"), http.StatusInternalServerError},
+		{"non-gRPC error", fmt.Errorf("plain error"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			writeHTTPError(rec, tt.err)
+			if rec.Code != tt.wantCode {
+				t.Errorf("writeHTTPError(%v) status = %d, want %d", tt.err, rec.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestMustJSON(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		data := mustJSON(map[string]string{"key": "val"})
+		if string(data) != `{"key":"val"}` {
+			t.Errorf("mustJSON = %s, want %s", data, `{"key":"val"}`)
+		}
+	})
+
+	t.Run("fallback", func(t *testing.T) {
+		// Channels cannot be marshaled to JSON.
+		data := mustJSON(make(chan int))
+		if string(data) != `{"error":"internal error"}` {
+			t.Errorf("mustJSON fallback = %s, want %s", data, `{"error":"internal error"}`)
+		}
+	})
+}
+
+func TestResponseToSSEEvent(t *testing.T) {
+	t.Run("nil_entry", func(t *testing.T) {
+		resp := &configpb.WatchResponse{
+			Type: configpb.ChangeType_CHANGE_TYPE_SET,
+		}
+		evt := responseToSSEEvent(resp)
+		if evt.Type != "SET" {
+			t.Errorf("Type = %q, want SET", evt.Type)
+		}
+		if evt.Namespace != "" || evt.Key != "" {
+			t.Errorf("expected empty namespace/key for nil entry, got ns=%q key=%q", evt.Namespace, evt.Key)
+		}
+	})
+
+	t.Run("unknown_type", func(t *testing.T) {
+		resp := &configpb.WatchResponse{
+			Type: configpb.ChangeType_CHANGE_TYPE_UNSPECIFIED,
+		}
+		evt := responseToSSEEvent(resp)
+		if evt.Type != "UNKNOWN" {
+			t.Errorf("Type = %q, want UNKNOWN", evt.Type)
+		}
+	})
 }
