@@ -1102,3 +1102,101 @@ func TestWriteSSEError_Sanitization(t *testing.T) {
 		})
 	}
 }
+
+func TestSSEWatch_SpecialCharacterValue(t *testing.T) {
+	handler, store := setupSSETest(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+	req = req.WithContext(ctx)
+	rec := newSyncRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rec, req)
+	}()
+
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
+
+	// Set a value with characters that could be problematic in SSE frames:
+	// newlines, quotes, backslashes, unicode, and angle brackets.
+	specialValue := "line1\nline2\r\nline3\ttab \"quotes\" <html> & émojis 🎉"
+	if _, err := store.Set(context.Background(), "test", "special-key", config.NewValue(specialValue)); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
+
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, "event: set")
+	}) {
+		t.Fatal("timed out waiting for SET event")
+	}
+
+	cancel()
+	<-done
+
+	body := rec.bodyString()
+
+	// Verify the event was received and the SSE frame is well-formed:
+	// each "data:" line should be a single line (no raw newlines splitting it).
+	evt, ok := findSSEEvent(t, body, "SET")
+	if !ok {
+		t.Fatal("expected SET event for special character value")
+	}
+	if evt.Key != "special-key" {
+		t.Errorf("key = %q, want special-key", evt.Key)
+	}
+	// Value is base64-encoded by json.Marshal, so it should be safe.
+	if len(evt.Value) == 0 {
+		t.Error("expected non-empty value")
+	}
+
+	// Verify no raw newlines appear inside a data: line (which would break SSE framing).
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "data: ") {
+			payload := strings.TrimPrefix(line, "data: ")
+			if strings.ContainsAny(payload, "\r") {
+				t.Errorf("data line contains carriage return: %q", payload)
+			}
+		}
+	}
+}
+
+func TestSSEWatch_CleanDisconnect_NoErrorEvent(t *testing.T) {
+	handler, _ := setupSSETest(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+	req = req.WithContext(ctx)
+	rec := newSyncRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rec, req)
+	}()
+
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble")
+	}
+
+	// Client disconnects normally.
+	cancel()
+	<-done
+
+	body := rec.bodyString()
+
+	// A clean client disconnect should NOT produce an error event.
+	if strings.Contains(body, "event: error") {
+		t.Errorf("clean disconnect should not produce error event, got:\n%s", body)
+	}
+}

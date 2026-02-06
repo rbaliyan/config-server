@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -60,6 +61,8 @@ func (sw *sseWriter) writeComment(comment string) error {
 	return nil
 }
 
+// writeRaw writes s directly without sanitization. Only use with trusted,
+// static content (e.g., the stream preamble).
 func (sw *sseWriter) writeRaw(s string) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
@@ -208,8 +211,9 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 
 		// svc.Watch blocks until the context is cancelled or an error occurs.
 		err := svc.Watch(req, stream)
-		if err != nil {
-			// Since we already wrote SSE headers, send an SSE error event.
+		if err != nil && ctx.Err() == nil {
+			// Send an SSE error event only for real errors, not context
+			// cancellation (which means the client disconnected normally).
 			writeSSEError(sw, err)
 		}
 
@@ -258,7 +262,11 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				writeSSEError(sw, err)
+				// io.EOF means normal stream termination — disconnect
+				// cleanly without sending a misleading error event.
+				if err != io.EOF {
+					writeSSEError(sw, err)
+				}
 				break
 			}
 
