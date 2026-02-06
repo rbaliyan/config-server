@@ -449,6 +449,117 @@ func TestRecoveryInterceptor(t *testing.T) {
 	}
 }
 
+func TestService_Get_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	// Empty namespace
+	_, err := svc.Get(ctx, &configpb.GetRequest{Key: "key"})
+	if err == nil {
+		t.Fatal("expected error for empty namespace")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+
+	// Empty key
+	_, err = svc.Get(ctx, &configpb.GetRequest{Namespace: "ns"})
+	if err == nil {
+		t.Fatal("expected error for empty key")
+	}
+	st, _ = status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestService_Set_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.Set(ctx, &configpb.SetRequest{Key: "key", Value: []byte(`"v"`), Codec: "json"})
+	if err == nil {
+		t.Fatal("expected error for empty namespace")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestService_Delete_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.Delete(ctx, &configpb.DeleteRequest{Namespace: "ns"})
+	if err == nil {
+		t.Fatal("expected error for empty key")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestService_List_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.List(ctx, &configpb.ListRequest{})
+	if err == nil {
+		t.Fatal("expected error for empty namespace")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestStreamRecoveryInterceptor(t *testing.T) {
+	logger := slog.Default()
+	interceptor := StreamRecoveryInterceptor(logger)
+
+	handler := func(srv any, stream grpc.ServerStream) error {
+		panic("stream panic")
+	}
+
+	err := interceptor(nil, nil, &grpc.StreamServerInfo{FullMethod: "/test"}, handler)
+	if err == nil {
+		t.Fatal("expected error from panicking stream handler")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.Internal {
+		t.Errorf("expected Internal, got: %v", st.Code())
+	}
+}
+
+func TestStreamLoggingInterceptor(t *testing.T) {
+	logger := slog.Default()
+	interceptor := StreamLoggingInterceptor(logger)
+
+	// Successful handler
+	handler := func(srv any, stream grpc.ServerStream) error {
+		return nil
+	}
+	err := interceptor(nil, nil, &grpc.StreamServerInfo{FullMethod: "/test"}, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Failing handler
+	failHandler := func(srv any, stream grpc.ServerStream) error {
+		return errors.New("stream fail")
+	}
+	err = interceptor(nil, nil, &grpc.StreamServerInfo{FullMethod: "/test"}, failHandler)
+	if err == nil {
+		t.Fatal("expected error from failing stream handler")
+	}
+}
+
 func TestLoggingInterceptor(t *testing.T) {
 	logger := slog.Default()
 	interceptor := LoggingInterceptor(logger)

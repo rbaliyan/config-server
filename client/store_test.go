@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -297,7 +298,6 @@ func TestConnState_String(t *testing.T) {
 		{ConnStateDisconnected, "disconnected"},
 		{ConnStateConnecting, "connecting"},
 		{ConnStateConnected, "connected"},
-		{ConnStateReconnecting, "reconnecting"},
 		{ConnStateClosed, "closed"},
 		{ConnState(99), "unknown"},
 	}
@@ -506,6 +506,10 @@ func TestIsNonRetryable(t *testing.T) {
 		{&PermissionDeniedError{}, true},
 		{config.ErrStoreNotConnected, false},
 		{errors.New("random error"), false},
+		// Wrapped errors should also be detected
+		{fmt.Errorf("wrapped: %w", config.ErrNotFound), true},
+		{fmt.Errorf("wrapped: %w", config.ErrKeyExists), true},
+		{fmt.Errorf("wrapped: %w", &PermissionDeniedError{Message: "denied"}), true},
 	}
 
 	for _, tt := range tests {

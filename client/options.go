@@ -48,7 +48,7 @@ const (
 	ConnStateDisconnected ConnState = iota
 	ConnStateConnecting
 	ConnStateConnected
-	ConnStateReconnecting
+	_                    // reserved
 	ConnStateClosed
 )
 
@@ -60,8 +60,6 @@ func (s ConnState) String() string {
 		return "connecting"
 	case ConnStateConnected:
 		return "connected"
-	case ConnStateReconnecting:
-		return "reconnecting"
 	case ConnStateClosed:
 		return "closed"
 	default:

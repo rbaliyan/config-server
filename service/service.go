@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,8 +31,23 @@ func NewService(store config.Store, opts ...Option) *Service {
 	return s
 }
 
+// validateNamespaceKey checks that namespace and key are non-empty.
+func validateNamespaceKey(namespace, key string) error {
+	if namespace == "" {
+		return status.Error(codes.InvalidArgument, "namespace is required")
+	}
+	if key == "" {
+		return status.Error(codes.InvalidArgument, "key is required")
+	}
+	return nil
+}
+
 // Get retrieves a configuration value by namespace and key.
 func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.GetResponse, error) {
+	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+
 	if err := s.authorizer.Authorize(ctx, AuthRequest{
 		Namespace: req.Namespace,
 		Key:       req.Key,
@@ -50,6 +68,10 @@ func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.
 
 // Set creates or updates a configuration value.
 func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.SetResponse, error) {
+	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+
 	if err := s.authorizer.Authorize(ctx, AuthRequest{
 		Namespace: req.Namespace,
 		Key:       req.Key,
@@ -89,6 +111,10 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 
 // Delete removes a configuration value.
 func (s *Service) Delete(ctx context.Context, req *configpb.DeleteRequest) (*configpb.DeleteResponse, error) {
+	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+
 	if err := s.authorizer.Authorize(ctx, AuthRequest{
 		Namespace: req.Namespace,
 		Key:       req.Key,
@@ -106,6 +132,10 @@ func (s *Service) Delete(ctx context.Context, req *configpb.DeleteRequest) (*con
 
 // List returns configuration entries matching a filter.
 func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configpb.ListResponse, error) {
+	if req.Namespace == "" {
+		return nil, status.Error(codes.InvalidArgument, "namespace is required")
+	}
+
 	if err := s.authorizer.Authorize(ctx, AuthRequest{
 		Namespace: req.Namespace,
 		Operation: OperationList,
@@ -144,10 +174,22 @@ func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configp
 func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigService_WatchServer) error {
 	ctx := stream.Context()
 
-	if err := s.authorizer.Authorize(ctx, AuthRequest{
-		Operation: OperationWatch,
-	}); err != nil {
-		return err
+	// Authorize each requested namespace individually
+	if len(req.Namespaces) == 0 {
+		if err := s.authorizer.Authorize(ctx, AuthRequest{
+			Operation: OperationWatch,
+		}); err != nil {
+			return err
+		}
+	} else {
+		for _, ns := range req.Namespaces {
+			if err := s.authorizer.Authorize(ctx, AuthRequest{
+				Namespace: ns,
+				Operation: OperationWatch,
+			}); err != nil {
+				return err
+			}
+		}
 	}
 
 	watchFilter := config.WatchFilter{
@@ -227,7 +269,10 @@ func valueToProto(namespace, key string, val config.Value) *configpb.Entry {
 	}
 
 	// Marshal value to bytes
-	if data, err := val.Marshal(); err == nil {
+	if data, err := val.Marshal(); err != nil {
+		slog.Warn("failed to marshal config value",
+			"namespace", namespace, "key", key, "error", err)
+	} else {
 		entry.Value = data
 	}
 

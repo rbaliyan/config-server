@@ -3,6 +3,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/rand"
 	"sync"
@@ -270,13 +271,18 @@ func (s *RemoteStore) retry(ctx context.Context, fn func() error) error {
 
 func isNonRetryable(err error) bool {
 	// Don't retry client errors or not found
-	switch err {
-	case config.ErrNotFound, config.ErrKeyExists, config.ErrInvalidKey,
-		config.ErrInvalidNamespace, config.ErrInvalidValue, config.ErrReadOnly:
+	switch {
+	case errors.Is(err, config.ErrNotFound),
+		errors.Is(err, config.ErrKeyExists),
+		errors.Is(err, config.ErrInvalidKey),
+		errors.Is(err, config.ErrInvalidNamespace),
+		errors.Is(err, config.ErrInvalidValue),
+		errors.Is(err, config.ErrReadOnly):
 		return true
 	}
 	// Don't retry permission errors
-	if _, ok := err.(*PermissionDeniedError); ok {
+	var permErr *PermissionDeniedError
+	if errors.As(err, &permErr) {
 		return true
 	}
 	return false
