@@ -321,7 +321,7 @@ func TestSSEWatch_Authorization(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=secret", nil)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 
 	done := make(chan struct{})
 	go func() {
@@ -331,7 +331,7 @@ func TestSSEWatch_Authorization(t *testing.T) {
 
 	<-done
 
-	body := rec.Body.String()
+	body := rec.bodyString()
 
 	// The in-process handler writes SSE headers before calling svc.Watch,
 	// so we get an error event instead of an HTTP error code.
@@ -356,7 +356,10 @@ func TestSSEWatch_QueryParams(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet,
 		"/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/&prefixes=db/", nil)
 
-	req := parseWatchQuery(r)
+	req, err := parseWatchQuery(r)
+	if err != nil {
+		t.Fatalf("parseWatchQuery failed: %v", err)
+	}
 
 	if len(req.Namespaces) != 2 || req.Namespaces[0] != "ns1" || req.Namespaces[1] != "ns2" {
 		t.Errorf("namespaces = %v, want [ns1 ns2]", req.Namespaces)
@@ -412,7 +415,7 @@ type nonFlushWriter struct {
 	h    http.Header
 }
 
-func (w *nonFlushWriter) Header() http.Header        { return w.h }
+func (w *nonFlushWriter) Header() http.Header         { return w.h }
 func (w *nonFlushWriter) Write(b []byte) (int, error) { return w.body.Write(b) }
 func (w *nonFlushWriter) WriteHeader(code int)        { w.code = code }
 
@@ -977,10 +980,10 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 	r.Header.Set("X-Role", "admin")
 	r.Header.Set("X-Request-Id", "req-42")
 	r.Header.Set("X-Forwarded-For", "1.2.3.4")       // proxy header, should be excluded
-	r.Header.Set("Connection", "keep-alive")           // hop-by-hop, should be excluded
-	r.Header.Set("Accept-Encoding", "gzip")            // transport, should be excluded
-	r.Header.Set("Content-Type", "application/json")   // should be excluded
-	r.Header.Set("Cookie", "session=abc")              // should be excluded
+	r.Header.Set("Connection", "keep-alive")         // hop-by-hop, should be excluded
+	r.Header.Set("Accept-Encoding", "gzip")          // transport, should be excluded
+	r.Header.Set("Content-Type", "application/json") // should be excluded
+	r.Header.Set("Cookie", "session=abc")            // should be excluded
 
 	ctx := httpHeadersToMetadata(context.Background(), r)
 
@@ -1170,6 +1173,111 @@ func TestSSEWatch_SpecialCharacterValue(t *testing.T) {
 				t.Errorf("data line contains carriage return: %q", payload)
 			}
 		}
+	}
+}
+
+func TestParseWatchQuery_Limits(t *testing.T) {
+	t.Run("too_many_namespaces", func(t *testing.T) {
+		var b strings.Builder
+		b.WriteString("/v1/watch?")
+		for i := range maxWatchParams + 1 {
+			if i > 0 {
+				b.WriteByte('&')
+			}
+			fmt.Fprintf(&b, "namespaces=ns%d", i)
+		}
+		r := httptest.NewRequest(http.MethodGet, b.String(), nil)
+		_, err := parseWatchQuery(r)
+		if err == nil {
+			t.Fatal("expected error for too many namespaces")
+		}
+		if !strings.Contains(err.Error(), "too many namespaces") {
+			t.Errorf("error = %v, want 'too many namespaces'", err)
+		}
+	})
+
+	t.Run("too_many_prefixes", func(t *testing.T) {
+		var b strings.Builder
+		b.WriteString("/v1/watch?")
+		for i := range maxWatchParams + 1 {
+			if i > 0 {
+				b.WriteByte('&')
+			}
+			fmt.Fprintf(&b, "prefixes=p%d", i)
+		}
+		r := httptest.NewRequest(http.MethodGet, b.String(), nil)
+		_, err := parseWatchQuery(r)
+		if err == nil {
+			t.Fatal("expected error for too many prefixes")
+		}
+	})
+
+	t.Run("namespace_too_long", func(t *testing.T) {
+		longNS := strings.Repeat("a", maxParamValueLen+1)
+		r := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces="+longNS, nil)
+		_, err := parseWatchQuery(r)
+		if err == nil {
+			t.Fatal("expected error for namespace too long")
+		}
+		if !strings.Contains(err.Error(), "too long") {
+			t.Errorf("error = %v, want 'too long'", err)
+		}
+	})
+
+	t.Run("prefix_too_long", func(t *testing.T) {
+		longPF := strings.Repeat("b", maxParamValueLen+1)
+		r := httptest.NewRequest(http.MethodGet, "/v1/watch?prefixes="+longPF, nil)
+		_, err := parseWatchQuery(r)
+		if err == nil {
+			t.Fatal("expected error for prefix too long")
+		}
+	})
+
+	t.Run("valid_within_limits", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=ns1&prefixes=p1", nil)
+		req, err := parseWatchQuery(r)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(req.Namespaces) != 1 || req.Namespaces[0] != "ns1" {
+			t.Errorf("namespaces = %v, want [ns1]", req.Namespaces)
+		}
+	})
+
+	t.Run("empty_params_valid", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/v1/watch", nil)
+		req, err := parseWatchQuery(r)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(req.Namespaces) != 0 || len(req.Prefixes) != 0 {
+			t.Errorf("expected empty slices, got ns=%v pf=%v", req.Namespaces, req.Prefixes)
+		}
+	})
+}
+
+func TestSSEWatch_QueryParamValidation_HTTP(t *testing.T) {
+	handler, _ := setupSSETest(t)
+
+	// Build a URL with too many namespaces.
+	var b strings.Builder
+	b.WriteString("/v1/watch?")
+	for i := range maxWatchParams + 1 {
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		fmt.Fprintf(&b, "namespaces=ns%d", i)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, b.String(), nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "too many namespaces") {
+		t.Errorf("body = %q, want 'too many namespaces'", rec.Body.String())
 	}
 }
 

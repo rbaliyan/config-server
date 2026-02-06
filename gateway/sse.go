@@ -116,10 +116,10 @@ func sendSSEResponse(sw *sseWriter, resp *configpb.WatchResponse) error {
 // No-op stubs to satisfy grpc.ServerStream. The SSE adapter only uses
 // Context() and Send(); metadata and raw message methods are unused.
 func (s *sseWatchStream) SetHeader(metadata.MD) error  { return nil }
-func (s *sseWatchStream) SendHeader(metadata.MD) error  { return nil }
-func (s *sseWatchStream) SetTrailer(metadata.MD)        {}
-func (s *sseWatchStream) SendMsg(any) error              { return nil }
-func (s *sseWatchStream) RecvMsg(any) error              { return nil }
+func (s *sseWatchStream) SendHeader(metadata.MD) error { return nil }
+func (s *sseWatchStream) SetTrailer(metadata.MD)       {}
+func (s *sseWatchStream) SendMsg(any) error            { return nil }
+func (s *sseWatchStream) RecvMsg(any) error            { return nil }
 
 // responseToSSEEvent converts a WatchResponse proto to an sseEvent.
 func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
@@ -154,11 +154,15 @@ func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
 }
 
 // writeSSEHeaders sets the standard SSE response headers and flushes them.
-func writeSSEHeaders(w http.ResponseWriter, flusher http.Flusher) {
+func writeSSEHeaders(w http.ResponseWriter, r *http.Request, flusher http.Flusher) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")       // Hint for HTTP/1.1 proxies.
-	w.Header().Set("X-Accel-Buffering", "no")         // Prevent nginx proxy buffering.
+	w.Header().Set("X-Accel-Buffering", "no") // Prevent nginx proxy buffering.
+	// Connection: keep-alive is only meaningful for HTTP/1.1 proxies;
+	// it is a prohibited hop-by-hop header in HTTP/2 (RFC 9113 §8.2.2).
+	if r.ProtoMajor == 1 {
+		w.Header().Set("Connection", "keep-alive")
+	}
 	flusher.Flush()
 }
 
@@ -190,10 +194,14 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 			return
 		}
 
-		req := parseWatchQuery(r)
+		req, err := parseWatchQuery(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		// Set SSE headers before calling Watch (which blocks).
-		writeSSEHeaders(w, flusher)
+		writeSSEHeaders(w, r, flusher)
 
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
@@ -221,7 +229,7 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 		}()
 
 		// svc.Watch blocks until the context is cancelled or an error occurs.
-		err := svc.Watch(req, stream)
+		err = svc.Watch(req, stream)
 		if err != nil && ctx.Err() == nil {
 			// Send an SSE error event only for real errors, not context
 			// cancellation (which means the client disconnected normally).
@@ -243,7 +251,11 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 			return
 		}
 
-		req := parseWatchQuery(r)
+		req, err := parseWatchQuery(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
@@ -255,7 +267,7 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 		}
 
 		// Set SSE headers after successful stream creation.
-		writeSSEHeaders(w, flusher)
+		writeSSEHeaders(w, r, flusher)
 
 		sw := &sseWriter{w: w, flusher: flusher}
 		if err := writeStreamPreamble(sw); err != nil {
@@ -291,13 +303,39 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 	})
 }
 
+const (
+	maxWatchParams   = 100 // max namespaces or prefixes per request
+	maxParamValueLen = 256 // max length of a single parameter value
+)
+
 // parseWatchQuery extracts namespaces and prefixes from query parameters.
-func parseWatchQuery(r *http.Request) *configpb.WatchRequest {
+// Returns an error if limits are exceeded.
+func parseWatchQuery(r *http.Request) (*configpb.WatchRequest, error) {
 	q := r.URL.Query()
-	return &configpb.WatchRequest{
-		Namespaces: q["namespaces"],
-		Prefixes:   q["prefixes"],
+	ns := q["namespaces"]
+	pf := q["prefixes"]
+
+	if len(ns) > maxWatchParams {
+		return nil, fmt.Errorf("too many namespaces (max %d)", maxWatchParams)
 	}
+	if len(pf) > maxWatchParams {
+		return nil, fmt.Errorf("too many prefixes (max %d)", maxWatchParams)
+	}
+	for _, v := range ns {
+		if len(v) > maxParamValueLen {
+			return nil, fmt.Errorf("namespace value too long (max %d bytes)", maxParamValueLen)
+		}
+	}
+	for _, v := range pf {
+		if len(v) > maxParamValueLen {
+			return nil, fmt.Errorf("prefix value too long (max %d bytes)", maxParamValueLen)
+		}
+	}
+
+	return &configpb.WatchRequest{
+		Namespaces: ns,
+		Prefixes:   pf,
+	}, nil
 }
 
 // httpHeadersToMetadata converts selected HTTP request headers into gRPC
