@@ -37,7 +37,11 @@ func newSyncRecorder() *syncRecorder {
 	return &syncRecorder{rec: httptest.NewRecorder()}
 }
 
-func (sr *syncRecorder) Header() http.Header { return sr.rec.Header() }
+func (sr *syncRecorder) Header() http.Header {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	return sr.rec.Header()
+}
 
 func (sr *syncRecorder) Write(b []byte) (int, error) {
 	sr.mu.Lock()
@@ -851,20 +855,18 @@ func TestSSEWatch_ConcurrentConnections(t *testing.T) {
 	handler, store := setupSSETest(t)
 
 	const numClients = 5
-	type result struct {
-		body string
-	}
-	results := make([]result, numClients)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Start multiple concurrent SSE watchers.
-	done := make(chan struct{})
+	var wg sync.WaitGroup
 	recorders := make([]*syncRecorder, numClients)
 	for i := range numClients {
 		recorders[i] = newSyncRecorder()
+		wg.Add(1)
 		go func(idx int) {
+			defer wg.Done()
 			req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 			req = req.WithContext(ctx)
 			handler.ServeHTTP(recorders[idx], req)
@@ -895,24 +897,19 @@ func TestSSEWatch_ConcurrentConnections(t *testing.T) {
 
 	cancel()
 
-	// Wait for all handlers to exit.
-	allDone := make(chan struct{})
-	go func() {
-		// Give handlers time to finish after cancel.
-		time.Sleep(500 * time.Millisecond)
-		close(allDone)
-	}()
+	// Wait for all handler goroutines to exit.
+	wgDone := make(chan struct{})
+	go func() { wg.Wait(); close(wgDone) }()
 	select {
-	case <-allDone:
+	case <-wgDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("handlers did not exit after cancel")
 	}
-	close(done)
 
 	// Verify all clients got the event.
 	for i := range numClients {
-		results[i].body = recorders[i].bodyString()
-		evt, ok := findSSEEvent(t, results[i].body, "SET")
+		body := recorders[i].bodyString()
+		evt, ok := findSSEEvent(t, body, "SET")
 		if !ok {
 			t.Errorf("client %d: expected SET event", i)
 			continue
@@ -971,6 +968,10 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/v1/watch", nil)
 	r.Header.Set("Authorization", "Bearer token123")
 	r.Header.Set("X-Role", "admin")
+	r.Header.Set("X-Request-Id", "req-42")
+	r.Header.Set("Connection", "keep-alive")       // hop-by-hop, should be excluded
+	r.Header.Set("Accept-Encoding", "gzip")         // transport, should be excluded
+	r.Header.Set("Content-Type", "application/json") // should be excluded
 
 	ctx := httpHeadersToMetadata(context.Background(), r)
 
@@ -979,10 +980,50 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 		t.Fatal("expected incoming metadata on context")
 	}
 
+	// Allowlisted headers should be forwarded.
 	if got := md.Get("authorization"); len(got) == 0 || got[0] != "Bearer token123" {
 		t.Errorf("authorization = %v, want [Bearer token123]", got)
 	}
 	if got := md.Get("x-role"); len(got) == 0 || got[0] != "admin" {
 		t.Errorf("x-role = %v, want [admin]", got)
+	}
+	if got := md.Get("x-request-id"); len(got) == 0 || got[0] != "req-42" {
+		t.Errorf("x-request-id = %v, want [req-42]", got)
+	}
+
+	// Hop-by-hop and transport headers should be excluded.
+	if got := md.Get("connection"); len(got) != 0 {
+		t.Errorf("connection should be excluded, got %v", got)
+	}
+	if got := md.Get("accept-encoding"); len(got) != 0 {
+		t.Errorf("accept-encoding should be excluded, got %v", got)
+	}
+	if got := md.Get("content-type"); len(got) != 0 {
+		t.Errorf("content-type should be excluded, got %v", got)
+	}
+}
+
+func TestIsForwardableHeader(t *testing.T) {
+	tests := []struct {
+		header string
+		want   bool
+	}{
+		{"authorization", true},
+		{"cookie", true},
+		{"x-request-id", true},
+		{"x-correlation-id", true},
+		{"x-custom-anything", true},
+		{"x-role", true},
+		{"connection", false},
+		{"transfer-encoding", false},
+		{"accept-encoding", false},
+		{"content-type", false},
+		{"host", false},
+		{"user-agent", false},
+	}
+	for _, tt := range tests {
+		if got := isForwardableHeader(tt.header); got != tt.want {
+			t.Errorf("isForwardableHeader(%q) = %v, want %v", tt.header, got, tt.want)
+		}
 	}
 }

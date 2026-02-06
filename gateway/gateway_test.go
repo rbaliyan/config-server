@@ -184,7 +184,9 @@ func TestNewInProcessHandler_ServeHTTP(t *testing.T) {
 	defer store.Close(ctx)
 
 	// Seed test data
-	store.Set(ctx, "test", "key1", config.NewValue("val1"))
+	if _, err := store.Set(ctx, "test", "key1", config.NewValue("val1")); err != nil {
+		t.Fatalf("failed to seed test data: %v", err)
+	}
 
 	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
 

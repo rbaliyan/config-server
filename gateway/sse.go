@@ -36,6 +36,8 @@ type sseWriter struct {
 	flusher http.Flusher
 }
 
+// writeEvent writes an SSE event frame. The data parameter must not contain
+// newlines — json.Marshal (the only caller's encoder) guarantees single-line output.
 func (sw *sseWriter) writeEvent(eventType string, data []byte) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
@@ -194,8 +196,13 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 			sw:  sw,
 		}
 
-		// Start heartbeat goroutine.
-		go runHeartbeat(ctx, sw, heartbeat)
+		// Start heartbeat goroutine and ensure it exits before the
+		// handler returns, preventing writes to a recycled ResponseWriter.
+		hbDone := make(chan struct{})
+		go func() {
+			defer close(hbDone)
+			runHeartbeat(ctx, sw, heartbeat)
+		}()
 
 		// svc.Watch blocks until the context is cancelled or an error occurs.
 		err := svc.Watch(req, stream)
@@ -203,6 +210,9 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 			// Since we already wrote SSE headers, send an SSE error event.
 			writeSSEError(sw, err)
 		}
+
+		cancel()
+		<-hbDone
 	})
 }
 
@@ -235,20 +245,28 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 			return
 		}
 
-		// Start heartbeat goroutine.
-		go runHeartbeat(ctx, sw, heartbeat)
+		// Start heartbeat goroutine and ensure it exits before the
+		// handler returns, preventing writes to a recycled ResponseWriter.
+		hbDone := make(chan struct{})
+		go func() {
+			defer close(hbDone)
+			runHeartbeat(ctx, sw, heartbeat)
+		}()
 
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
 				writeSSEError(sw, err)
-				return
+				break
 			}
 
 			if err := sendSSEResponse(sw, resp); err != nil {
-				return
+				break
 			}
 		}
+
+		cancel()
+		<-hbDone
 	})
 }
 
@@ -261,15 +279,34 @@ func parseWatchQuery(r *http.Request) *configpb.WatchRequest {
 	}
 }
 
-// httpHeadersToMetadata converts HTTP request headers into gRPC incoming
-// metadata on the context. This allows interceptor-based auth patterns
-// (e.g., Authorization, x-role headers) to work in the in-process SSE path.
+// httpHeadersToMetadata converts selected HTTP request headers into gRPC
+// incoming metadata on the context. Only headers relevant to authentication
+// and request tracing are forwarded; hop-by-hop and transport headers
+// (Connection, Transfer-Encoding, etc.) are excluded.
 func httpHeadersToMetadata(ctx context.Context, r *http.Request) context.Context {
-	md := make(metadata.MD, len(r.Header))
+	md := make(metadata.MD)
 	for key, values := range r.Header {
-		md[strings.ToLower(key)] = values
+		lower := strings.ToLower(key)
+		if isForwardableHeader(lower) {
+			md[lower] = values
+		}
+	}
+	if len(md) == 0 {
+		return ctx
 	}
 	return metadata.NewIncomingContext(ctx, md)
+}
+
+// isForwardableHeader returns true for headers that should be propagated
+// as gRPC metadata. This allowlists auth, tracing, and custom headers
+// while excluding hop-by-hop and transport-level headers.
+func isForwardableHeader(lower string) bool {
+	switch lower {
+	case "authorization", "cookie", "x-request-id", "x-correlation-id":
+		return true
+	}
+	// Forward custom headers (x-* prefix) commonly used for auth/context.
+	return strings.HasPrefix(lower, "x-")
 }
 
 // runHeartbeat sends SSE comment lines at the given interval to keep
