@@ -40,7 +40,9 @@ func TestService_Get(t *testing.T) {
 	svc, store := setupTestService(t)
 
 	// Set up test data
-	store.Set(ctx, "test", "key1", config.NewValue("value1"))
+	if _, err := store.Set(ctx, "test", "key1", config.NewValue("value1")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	// Test successful get
 	resp, err := svc.Get(ctx, &configpb.GetRequest{
@@ -127,7 +129,9 @@ func TestService_Delete(t *testing.T) {
 	svc, store := setupTestService(t)
 
 	// Set up test data
-	store.Set(ctx, "test", "to-delete", config.NewValue("value"))
+	if _, err := store.Set(ctx, "test", "to-delete", config.NewValue("value")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	// Delete it
 	_, err := svc.Delete(ctx, &configpb.DeleteRequest{
@@ -158,9 +162,15 @@ func TestService_List(t *testing.T) {
 	svc, store := setupTestService(t)
 
 	// Set up test data
-	store.Set(ctx, "test", "app/name", config.NewValue("myapp"))
-	store.Set(ctx, "test", "app/version", config.NewValue("1.0"))
-	store.Set(ctx, "test", "db/host", config.NewValue("localhost"))
+	if _, err := store.Set(ctx, "test", "app/name", config.NewValue("myapp")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
+	if _, err := store.Set(ctx, "test", "app/version", config.NewValue("1.0")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
+	if _, err := store.Set(ctx, "test", "db/host", config.NewValue("localhost")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	// List with prefix
 	resp, err := svc.List(ctx, &configpb.ListRequest{
@@ -179,7 +189,7 @@ func TestService_List(t *testing.T) {
 func TestService_DenyAllAuthorizer(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	defer store.Close(ctx)
 
 	// Service with DenyAll (default)
@@ -225,7 +235,7 @@ func TestService_CheckAccess(t *testing.T) {
 func TestService_CheckAccess_DenyAll(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	defer store.Close(ctx)
 
 	svc := NewService(store) // DenyAll is default
@@ -325,7 +335,9 @@ func TestService_List_Pagination(t *testing.T) {
 	svc, store := setupTestService(t)
 
 	for i := 0; i < 5; i++ {
-		store.Set(ctx, "test", "key"+string(rune('A'+i)), config.NewValue(i))
+		if _, err := store.Set(ctx, "test", "key"+string(rune('A'+i)), config.NewValue(i)); err != nil {
+			t.Fatalf("failed to set test data: %v", err)
+		}
 	}
 
 	// List with limit
@@ -582,7 +594,7 @@ func TestNewService_NilStorePanics(t *testing.T) {
 func TestNewService_WithOptions(t *testing.T) {
 	store := memory.NewStore()
 	ctx := context.Background()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	defer store.Close(ctx)
 
 	auth := AllowAll()
@@ -622,7 +634,7 @@ func TestToGRPCError_WrappedErrors(t *testing.T) {
 func TestService_Get_ClosedStore(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	store.Close(ctx)
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
@@ -643,7 +655,7 @@ func TestService_Get_ClosedStore(t *testing.T) {
 func TestService_Set_ClosedStore(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	store.Close(ctx)
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
@@ -666,7 +678,7 @@ func TestService_Set_ClosedStore(t *testing.T) {
 func TestService_Delete_ClosedStore(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	store.Close(ctx)
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
@@ -687,7 +699,7 @@ func TestService_Delete_ClosedStore(t *testing.T) {
 func TestService_List_ClosedStore(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	store.Close(ctx)
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
@@ -801,7 +813,9 @@ func TestService_Watch_AllowAll(t *testing.T) {
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
 
-	store.Set(ctx, "test", "key1", config.NewValue("value1"))
+	if _, err := store.Set(ctx, "test", "key1", config.NewValue("value1")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -817,7 +831,9 @@ func TestService_Watch_AllowAll(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	store.Set(ctx, "test", "key2", config.NewValue("value2"))
+	if _, err := store.Set(ctx, "test", "key2", config.NewValue("value2")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -884,7 +900,9 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	store.Set(ctx, "any-ns", "somekey", config.NewValue("val"))
+	if _, err := store.Set(ctx, "any-ns", "somekey", config.NewValue("val")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -930,7 +948,7 @@ func TestService_Watch_NoNamespaces_DenyAll(t *testing.T) {
 func TestService_Watch_StoreWatchError(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
-	store.Connect(ctx)
+	_ = store.Connect(ctx)
 	store.Close(ctx) // Close the store so Watch returns an error
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
@@ -1005,7 +1023,9 @@ func TestService_Watch_SendError(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	store.Set(ctx, "test", "key1", config.NewValue("val"))
+	if _, err := store.Set(ctx, "test", "key1", config.NewValue("val")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	select {
 	case err := <-errCh:
@@ -1030,7 +1050,9 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 
 	svc := NewService(store, WithAuthorizer(AllowAll()))
 
-	store.Set(ctx, "test", "del-key", config.NewValue("to-delete"))
+	if _, err := store.Set(ctx, "test", "del-key", config.NewValue("to-delete")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1046,7 +1068,9 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	store.Delete(ctx, "test", "del-key")
+	if err := store.Delete(ctx, "test", "del-key"); err != nil {
+		t.Fatalf("failed to delete test data: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -1096,8 +1120,12 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	store.Set(ctx, "ns1", "k1", config.NewValue("v1"))
-	store.Set(ctx, "ns2", "k2", config.NewValue("v2"))
+	if _, err := store.Set(ctx, "ns1", "k1", config.NewValue("v1")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
+	if _, err := store.Set(ctx, "ns2", "k2", config.NewValue("v2")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 

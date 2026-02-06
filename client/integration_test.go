@@ -43,9 +43,8 @@ func setupIntegrationTest(t *testing.T) *RemoteStore {
 	configpb.RegisterConfigServiceServer(srv, svc)
 
 	go func() {
-		if err := srv.Serve(lis); err != nil {
-			// Server.Serve returns after GracefulStop; not an error.
-		}
+		// Server.Serve returns after GracefulStop; not an error.
+		_ = srv.Serve(lis)
 	}()
 
 	// Build the RemoteStore with a custom dialer that uses bufconn.

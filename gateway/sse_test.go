@@ -149,7 +149,9 @@ func TestSSEWatch_InProcess(t *testing.T) {
 		t.Fatal("timed out waiting for SSE preamble")
 	}
 
-	store.Set(context.Background(), "test", "app/timeout", config.NewValue("30"))
+	if _, err := store.Set(context.Background(), "test", "app/timeout", config.NewValue("30")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	// Wait for the SET event to appear.
 	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
@@ -183,7 +185,9 @@ func TestSSEWatch_DeleteEvent(t *testing.T) {
 	defer cancel()
 
 	// Pre-create a key to delete.
-	store.Set(context.Background(), "test", "old-key", config.NewValue("val"))
+	if _, err := store.Set(context.Background(), "test", "old-key", config.NewValue("val")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	req = req.WithContext(ctx)
@@ -201,7 +205,9 @@ func TestSSEWatch_DeleteEvent(t *testing.T) {
 		t.Fatal("timed out waiting for SSE preamble")
 	}
 
-	store.Delete(context.Background(), "test", "old-key")
+	if err := store.Delete(context.Background(), "test", "old-key"); err != nil {
+		t.Fatalf("failed to delete test data: %v", err)
+	}
 
 	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
 		return strings.Contains(s, "event: delete")
@@ -467,7 +473,9 @@ func TestSSEWatch_ExistingRoutes_StillWork(t *testing.T) {
 	handler, store := setupSSETest(t)
 
 	// Seed data.
-	store.Set(context.Background(), "test", "key1", config.NewValue("val1"))
+	if _, err := store.Set(context.Background(), "test", "key1", config.NewValue("val1")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	// Existing gRPC-Gateway routes should still work.
 	req := httptest.NewRequest(http.MethodGet, "/v1/namespaces/test/keys/key1", nil)
@@ -561,7 +569,9 @@ func setupBufconn(t *testing.T, store config.Store) *bufconn.Listener {
 	grpcServer := grpc.NewServer()
 	configpb.RegisterConfigServiceServer(grpcServer, svc)
 
-	go grpcServer.Serve(lis)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
 	t.Cleanup(grpcServer.Stop)
 
 	return lis
@@ -611,7 +621,9 @@ func TestSSEWatch_Remote(t *testing.T) {
 		t.Fatal("timed out waiting for remote SSE preamble")
 	}
 
-	store.Set(context.Background(), "test", "remote-key", config.NewValue("remote-val"))
+	if _, err := store.Set(context.Background(), "test", "remote-key", config.NewValue("remote-val")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	if !waitForBody(t, rec, 5*time.Second, func(s string) bool {
 		return strings.Contains(s, "event: set")
@@ -656,7 +668,9 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	configpb.RegisterConfigServiceServer(grpcServer, svc)
-	go grpcServer.Serve(lis)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
 	defer grpcServer.Stop()
 
 	handler, err := NewHandler(ctx, "passthrough:///bufnet",
@@ -839,7 +853,6 @@ func TestSSEWatch_ConcurrentConnections(t *testing.T) {
 	const numClients = 5
 	type result struct {
 		body string
-		err  error
 	}
 	results := make([]result, numClients)
 
@@ -868,7 +881,9 @@ func TestSSEWatch_ConcurrentConnections(t *testing.T) {
 	}
 
 	// Trigger a change — all clients should receive it.
-	store.Set(context.Background(), "test", "concurrent-key", config.NewValue("val"))
+	if _, err := store.Set(context.Background(), "test", "concurrent-key", config.NewValue("val")); err != nil {
+		t.Fatalf("failed to set test data: %v", err)
+	}
 
 	for i := range numClients {
 		if !waitForBody(t, recorders[i], 2*time.Second, func(s string) bool {

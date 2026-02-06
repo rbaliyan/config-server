@@ -2,6 +2,8 @@ module github.com/rbaliyan/config-server
 
 go 1.24.2
 
+toolchain go1.24.13
+
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7
 	github.com/rbaliyan/config v0.2.5

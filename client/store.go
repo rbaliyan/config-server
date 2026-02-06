@@ -299,10 +299,7 @@ func isNonRetryable(err error) bool {
 	}
 	// Don't retry permission errors
 	var permErr *PermissionDeniedError
-	if errors.As(err, &permErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &permErr)
 }
 
 // Get retrieves a configuration value by namespace and key.

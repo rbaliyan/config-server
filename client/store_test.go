@@ -151,7 +151,7 @@ func TestRemoteStore_ConcurrentConnectClose(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			store.Connect(ctx) // Ignore error - no server
+			_ = store.Connect(ctx) // Ignore error - no server
 		}()
 		go func() {
 			defer wg.Done()
@@ -163,10 +163,8 @@ func TestRemoteStore_ConcurrentConnectClose(t *testing.T) {
 }
 
 func TestRemoteStore_InterfaceCompliance(t *testing.T) {
-	var store config.Store = &RemoteStore{}
-	if store == nil {
-		t.Error("RemoteStore should implement config.Store")
-	}
+	var store config.Store = &RemoteStore{} //nolint:staticcheck // compile-time interface check
+	_ = store                               // ensure it implements config.Store
 }
 
 func TestRemoteStore_State(t *testing.T) {
@@ -780,7 +778,7 @@ func TestCircuitBreaker_GetClientReturnsError(t *testing.T) {
 	)
 
 	// Connect so client is set
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 
 	// Open the circuit
 	store.recordFailure()
@@ -1124,7 +1122,7 @@ func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	mockClient := &mockConfigClient{
@@ -1162,7 +1160,7 @@ func TestWatchLoop_MaxErrorsRespected(t *testing.T) {
 		WithWatchMaxErrors(2),
 		WithRetry(0, time.Millisecond, time.Millisecond),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	var errorCount atomic.Int32
@@ -1211,7 +1209,7 @@ func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
 		WithWatchMaxErrors(5),
 		WithRetry(0, time.Millisecond, 10*time.Millisecond),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	// First call fails, second succeeds with a stream that has data then an error,
@@ -1291,7 +1289,7 @@ func TestWatchLoop_OnWatchErrorCallback(t *testing.T) {
 			mu.Unlock()
 		}),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	mockClient := &mockConfigClient{
@@ -1328,7 +1326,7 @@ func TestWatchLoop_StoreCloseDuringWatch(t *testing.T) {
 		WithInsecure(),
 		WithWatchReconnect(true, 1*time.Millisecond),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1419,7 +1417,7 @@ func TestWatchStream_DeleteChangeType(t *testing.T) {
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1469,7 +1467,7 @@ func TestWatchStream_NilEntry(t *testing.T) {
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
 	)
-	store.Connect(context.Background())
+	_ = store.Connect(context.Background())
 	defer store.Close(context.Background())
 
 	ctx, cancel := context.WithCancel(context.Background())
