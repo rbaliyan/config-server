@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -388,6 +389,9 @@ func TestSSEWatch_Headers(t *testing.T) {
 	}
 	if xab := result.Header().Get("X-Accel-Buffering"); xab != "no" {
 		t.Errorf("X-Accel-Buffering = %q, want no", xab)
+	}
+	if conn := result.Header().Get("Connection"); conn != "keep-alive" {
+		t.Errorf("Connection = %q, want keep-alive", conn)
 	}
 }
 
@@ -810,4 +814,160 @@ func TestResponseToSSEEvent(t *testing.T) {
 			t.Errorf("Type = %q, want UNKNOWN", evt.Type)
 		}
 	})
+}
+
+func TestSSEWatchStream_NoOpStubs(t *testing.T) {
+	stream := &sseWatchStream{}
+	if err := stream.SetHeader(nil); err != nil {
+		t.Errorf("SetHeader returned error: %v", err)
+	}
+	if err := stream.SendHeader(nil); err != nil {
+		t.Errorf("SendHeader returned error: %v", err)
+	}
+	stream.SetTrailer(nil) // no return value
+	if err := stream.SendMsg(nil); err != nil {
+		t.Errorf("SendMsg returned error: %v", err)
+	}
+	if err := stream.RecvMsg(nil); err != nil {
+		t.Errorf("RecvMsg returned error: %v", err)
+	}
+}
+
+func TestSSEWatch_ConcurrentConnections(t *testing.T) {
+	handler, store := setupSSETest(t)
+
+	const numClients = 5
+	type result struct {
+		body string
+		err  error
+	}
+	results := make([]result, numClients)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start multiple concurrent SSE watchers.
+	done := make(chan struct{})
+	recorders := make([]*syncRecorder, numClients)
+	for i := range numClients {
+		recorders[i] = newSyncRecorder()
+		go func(idx int) {
+			req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+			req = req.WithContext(ctx)
+			handler.ServeHTTP(recorders[idx], req)
+		}(i)
+	}
+
+	// Wait for all clients to connect.
+	for i := range numClients {
+		if !waitForBody(t, recorders[i], 2*time.Second, func(s string) bool {
+			return strings.Contains(s, ": connected")
+		}) {
+			t.Fatalf("client %d: timed out waiting for preamble", i)
+		}
+	}
+
+	// Trigger a change — all clients should receive it.
+	store.Set(context.Background(), "test", "concurrent-key", config.NewValue("val"))
+
+	for i := range numClients {
+		if !waitForBody(t, recorders[i], 2*time.Second, func(s string) bool {
+			return strings.Contains(s, "event: set")
+		}) {
+			t.Fatalf("client %d: timed out waiting for SET event", i)
+		}
+	}
+
+	cancel()
+
+	// Wait for all handlers to exit.
+	allDone := make(chan struct{})
+	go func() {
+		// Give handlers time to finish after cancel.
+		time.Sleep(500 * time.Millisecond)
+		close(allDone)
+	}()
+	select {
+	case <-allDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handlers did not exit after cancel")
+	}
+	close(done)
+
+	// Verify all clients got the event.
+	for i := range numClients {
+		results[i].body = recorders[i].bodyString()
+		evt, ok := findSSEEvent(t, results[i].body, "SET")
+		if !ok {
+			t.Errorf("client %d: expected SET event", i)
+			continue
+		}
+		if evt.Key != "concurrent-key" {
+			t.Errorf("client %d: key = %q, want concurrent-key", i, evt.Key)
+		}
+	}
+}
+
+func TestSSEWatch_MetadataPropagation(t *testing.T) {
+	// Verify that HTTP headers are propagated as gRPC metadata
+	// in the in-process handler.
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("failed to connect store: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+
+	handler, err := NewInProcessHandler(ctx, svc, WithHeartbeatInterval(30*time.Second))
+	if err != nil {
+		t.Fatalf("NewInProcessHandler failed: %v", err)
+	}
+
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("X-Custom-Header", "custom-value")
+	req = req.WithContext(reqCtx)
+	rec := newSyncRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rec, req)
+	}()
+
+	// If metadata propagation works, the handler should start normally
+	// (AllowAll authorizer accepts everything).
+	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("timed out waiting for SSE preamble with auth headers")
+	}
+
+	cancel()
+	<-done
+}
+
+func TestHttpHeadersToMetadata(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/v1/watch", nil)
+	r.Header.Set("Authorization", "Bearer token123")
+	r.Header.Set("X-Role", "admin")
+
+	ctx := httpHeadersToMetadata(context.Background(), r)
+
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		t.Fatal("expected incoming metadata on context")
+	}
+
+	if got := md.Get("authorization"); len(got) == 0 || got[0] != "Bearer token123" {
+		t.Errorf("authorization = %v, want [Bearer token123]", got)
+	}
+	if got := md.Get("x-role"); len(got) == 0 || got[0] != "admin" {
+		t.Errorf("x-role = %v, want [admin]", got)
+	}
 }

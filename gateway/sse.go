@@ -139,7 +139,8 @@ func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
 func writeSSEHeaders(w http.ResponseWriter, flusher http.Flusher) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no") // Prevent nginx proxy buffering.
+	w.Header().Set("Connection", "keep-alive")       // Hint for HTTP/1.1 proxies.
+	w.Header().Set("X-Accel-Buffering", "no")         // Prevent nginx proxy buffering.
 	flusher.Flush()
 }
 
@@ -178,6 +179,10 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
+
+		// Forward HTTP headers as gRPC incoming metadata so interceptor-based
+		// auth patterns (e.g., Authorization, x-role) work in the in-process path.
+		ctx = httpHeadersToMetadata(ctx, r)
 
 		sw := &sseWriter{w: w, flusher: flusher}
 		if err := writeStreamPreamble(sw); err != nil {
@@ -254,6 +259,17 @@ func parseWatchQuery(r *http.Request) *configpb.WatchRequest {
 		Namespaces: q["namespaces"],
 		Prefixes:   q["prefixes"],
 	}
+}
+
+// httpHeadersToMetadata converts HTTP request headers into gRPC incoming
+// metadata on the context. This allows interceptor-based auth patterns
+// (e.g., Authorization, x-role headers) to work in the in-process SSE path.
+func httpHeadersToMetadata(ctx context.Context, r *http.Request) context.Context {
+	md := make(metadata.MD, len(r.Header))
+	for key, values := range r.Header {
+		md[strings.ToLower(key)] = values
+	}
+	return metadata.NewIncomingContext(ctx, md)
 }
 
 // runHeartbeat sends SSE comment lines at the given interval to keep

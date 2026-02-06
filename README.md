@@ -151,6 +151,8 @@ data: {"type":"DELETE","namespace":"production","key":"app/old"}
 
 The stream begins with a `retry: 5000` hint (reconnect after 5 seconds) and a `: connected` comment. Heartbeat comments are sent every 30 seconds (configurable via `WithHeartbeatInterval`) to keep connections alive through proxies.
 
+The `value` field is base64-encoded (standard JSON encoding for byte arrays). Use `atob()` in JavaScript or `base64.StdEncoding.DecodeString()` in Go to decode it.
+
 **Note:** `Last-Event-ID` resumption is not supported. On reconnect, clients receive events from the current point forward — there is no replay of missed events. For durable delivery, use the gRPC Watch stream with the Go client's automatic reconnection (`WithWatchReconnect`).
 
 JavaScript example:
