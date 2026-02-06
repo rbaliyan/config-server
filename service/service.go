@@ -245,6 +245,9 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 				resp.Type = configpb.ChangeType_CHANGE_TYPE_SET
 			case config.ChangeTypeDelete:
 				resp.Type = configpb.ChangeType_CHANGE_TYPE_DELETE
+			default:
+				// Skip unrecognized change types (e.g. CHANGE_TYPE_UNSPECIFIED)
+				continue
 			}
 
 			if err := stream.Send(resp); err != nil {

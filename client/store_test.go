@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -1035,4 +1038,513 @@ func TestConnectAfterClose(t *testing.T) {
 	if !errors.Is(err, config.ErrStoreClosed) {
 		t.Errorf("Connect() after Close() = %v, want ErrStoreClosed", err)
 	}
+}
+
+// --- Mock types for watchLoop tests ---
+
+// mockWatchStream implements grpc.ServerStreamingClient[configpb.WatchResponse].
+type mockWatchStream struct {
+	grpc.ClientStream
+	ctx       context.Context
+	mu        sync.Mutex
+	responses []*configpb.WatchResponse
+	idx       int
+	err       error // error to return after all responses are consumed
+}
+
+func (m *mockWatchStream) Recv() (*configpb.WatchResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.idx < len(m.responses) {
+		resp := m.responses[m.idx]
+		m.idx++
+		return resp, nil
+	}
+	if m.err != nil {
+		return nil, m.err
+	}
+	return nil, io.EOF
+}
+
+func (m *mockWatchStream) Context() context.Context     { return m.ctx }
+func (m *mockWatchStream) Header() (metadata.MD, error) { return nil, nil }
+func (m *mockWatchStream) Trailer() metadata.MD         { return nil }
+func (m *mockWatchStream) CloseSend() error             { return nil }
+func (m *mockWatchStream) SendMsg(any) error            { return nil }
+func (m *mockWatchStream) RecvMsg(any) error            { return nil }
+
+// mockConfigClient implements configpb.ConfigServiceClient for testing watchLoop.
+type mockConfigClient struct {
+	mu          sync.Mutex
+	watchCalls  int
+	failCount   int            // number of Watch calls to fail before succeeding
+	watchErr    error          // error to return from Watch
+	streams     []*mockWatchStream // streams to return on success
+	streamIdx   int
+}
+
+func (m *mockConfigClient) Get(ctx context.Context, in *configpb.GetRequest, opts ...grpc.CallOption) (*configpb.GetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) Set(ctx context.Context, in *configpb.SetRequest, opts ...grpc.CallOption) (*configpb.SetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) Delete(ctx context.Context, in *configpb.DeleteRequest, opts ...grpc.CallOption) (*configpb.DeleteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) List(ctx context.Context, in *configpb.ListRequest, opts ...grpc.CallOption) (*configpb.ListResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) Watch(ctx context.Context, in *configpb.WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[configpb.WatchResponse], error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.watchCalls++
+	if m.watchCalls <= m.failCount {
+		return nil, m.watchErr
+	}
+	if m.streamIdx < len(m.streams) {
+		s := m.streams[m.streamIdx]
+		m.streamIdx++
+		return s, nil
+	}
+	// Return a stream that immediately returns EOF
+	return &mockWatchStream{ctx: ctx}, nil
+}
+
+func (m *mockConfigClient) CheckAccess(ctx context.Context, in *configpb.CheckAccessRequest, opts ...grpc.CallOption) (*configpb.CheckAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func TestWatchLoop_ReconnectDisabled(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(false, 0),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	mockClient := &mockConfigClient{
+		failCount: 1,
+		watchErr:  status.Error(codes.Unavailable, "server down"),
+	}
+
+	// Inject the mock client
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	// Drain the events channel
+	for range result.Events {
+	}
+
+	watchErr := result.Err()
+	if watchErr == nil {
+		t.Fatal("expected error when reconnect is disabled")
+	}
+}
+
+func TestWatchLoop_MaxErrorsRespected(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(true, 1*time.Millisecond),
+		WithWatchMaxErrors(2),
+		WithRetry(0, time.Millisecond, time.Millisecond),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	var errorCount atomic.Int32
+
+	mockClient := &mockConfigClient{
+		failCount: 100, // always fail
+		watchErr:  status.Error(codes.Unavailable, "server down"),
+	}
+
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	store.opts.onWatchError = func(err error) {
+		errorCount.Add(1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	// Drain the events channel
+	for range result.Events {
+	}
+
+	watchErr := result.Err()
+	if watchErr == nil {
+		t.Fatal("expected error after max errors exceeded")
+	}
+
+	count := errorCount.Load()
+	// watchMaxErrors=2, so we should see about 3 errors (errors > watchMaxErrors means give up)
+	if count < 2 {
+		t.Errorf("expected at least 2 errors, got %d", count)
+	}
+}
+
+func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(true, 1*time.Millisecond),
+		WithWatchMaxErrors(5),
+		WithRetry(0, time.Millisecond, 10*time.Millisecond),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	// First call fails, second succeeds with a stream that has data then an error,
+	// third call fails to trigger reconnection with reset backoff.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mockClient := &mockConfigClient{
+		failCount: 1,
+		watchErr:  status.Error(codes.Unavailable, "server down"),
+		streams: []*mockWatchStream{
+			{
+				ctx: ctx,
+				responses: []*configpb.WatchResponse{
+					{
+						Type: configpb.ChangeType_CHANGE_TYPE_SET,
+						Entry: &configpb.Entry{
+							Namespace: "test",
+							Key:       "k1",
+							Value:     []byte(`"v1"`),
+							Codec:     "json",
+						},
+					},
+				},
+				err: status.Error(codes.Unavailable, "stream broken"),
+			},
+		},
+	}
+
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	// Read at least one event
+	select {
+	case evt, ok := <-result.Events:
+		if !ok {
+			// Channel closed, check error
+			break
+		}
+		if evt.Key != "k1" {
+			t.Errorf("expected key k1, got %s", evt.Key)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+
+	// Let the watch loop reconnect and eventually finish
+	cancel()
+
+	// Wait for watch to finish
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for watch to finish")
+	default:
+		// Drain remaining events
+		for range result.Events {
+		}
+	}
+}
+
+func TestWatchLoop_OnWatchErrorCallback(t *testing.T) {
+	var callbackErrors []error
+	var mu sync.Mutex
+
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(false, 0),
+		WithWatchErrorCallback(func(err error) {
+			mu.Lock()
+			callbackErrors = append(callbackErrors, err)
+			mu.Unlock()
+		}),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	mockClient := &mockConfigClient{
+		failCount: 1,
+		watchErr:  status.Error(codes.Unavailable, "server down"),
+	}
+
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	for range result.Events {
+	}
+
+	_ = result.Err()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(callbackErrors) == 0 {
+		t.Error("expected onWatchError callback to be called")
+	}
+}
+
+func TestWatchLoop_StoreCloseDuringWatch(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(true, 1*time.Millisecond),
+	)
+	store.Connect(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a stream that blocks on Recv until closeCh is closed, then returns an error
+	blockCh := make(chan struct{})
+	mockClient := &mockConfigClient{
+		streams: []*mockWatchStream{
+			{
+				ctx: ctx,
+				responses: nil,
+				err:       nil, // Will return EOF after no responses, but we want to block
+			},
+		},
+	}
+	// Instead, use a custom client that returns a stream that blocks
+	blockingStream := &blockingWatchStream{
+		ctx:     ctx,
+		closeCh: blockCh,
+	}
+
+	store.mu.Lock()
+	store.client = &blockingConfigClient{
+		mockConfigClient: mockClient,
+		blockingStream:   blockingStream,
+	}
+	store.mu.Unlock()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	// Give watchLoop time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Unblock the stream and close the store simultaneously.
+	// Closing store.closeCh triggers the watchLoop to exit.
+	close(blockCh) // unblock Recv so it returns EOF
+	store.Close(context.Background())
+
+	// Drain events
+	for range result.Events {
+	}
+
+	watchErr := result.Err()
+	if watchErr != nil && !errors.Is(watchErr, config.ErrStoreClosed) {
+		// The watch may exit cleanly (nil) or with ErrStoreClosed
+		t.Logf("Watch returned: %v (acceptable)", watchErr)
+	}
+}
+
+// blockingWatchStream blocks on Recv until closeCh is closed, then returns EOF.
+type blockingWatchStream struct {
+	grpc.ClientStream
+	ctx     context.Context
+	closeCh chan struct{}
+}
+
+func (b *blockingWatchStream) Recv() (*configpb.WatchResponse, error) {
+	select {
+	case <-b.ctx.Done():
+		return nil, b.ctx.Err()
+	case <-b.closeCh:
+		return nil, io.EOF
+	}
+}
+
+func (b *blockingWatchStream) Context() context.Context     { return b.ctx }
+func (b *blockingWatchStream) Header() (metadata.MD, error) { return nil, nil }
+func (b *blockingWatchStream) Trailer() metadata.MD         { return nil }
+func (b *blockingWatchStream) CloseSend() error             { return nil }
+func (b *blockingWatchStream) SendMsg(any) error            { return nil }
+func (b *blockingWatchStream) RecvMsg(any) error            { return nil }
+
+// blockingConfigClient wraps mockConfigClient but returns a blocking stream.
+type blockingConfigClient struct {
+	*mockConfigClient
+	blockingStream *blockingWatchStream
+}
+
+func (b *blockingConfigClient) Watch(ctx context.Context, in *configpb.WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[configpb.WatchResponse], error) {
+	return b.blockingStream, nil
+}
+
+func TestWatchStream_DeleteChangeType(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(false, 0),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mockClient := &mockConfigClient{
+		streams: []*mockWatchStream{
+			{
+				ctx: ctx,
+				responses: []*configpb.WatchResponse{
+					{
+						Type: configpb.ChangeType_CHANGE_TYPE_DELETE,
+						Entry: &configpb.Entry{
+							Namespace: "test",
+							Key:       "deleted-key",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	evt := <-result.Events
+	if evt.Type != config.ChangeTypeDelete {
+		t.Errorf("expected ChangeTypeDelete, got %v", evt.Type)
+	}
+	if evt.Key != "deleted-key" {
+		t.Errorf("expected key 'deleted-key', got %q", evt.Key)
+	}
+
+	// Drain remaining
+	for range result.Events {
+	}
+}
+
+func TestWatchStream_NilEntry(t *testing.T) {
+	store, _ := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithWatchReconnect(false, 0),
+	)
+	store.Connect(context.Background())
+	defer store.Close(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mockClient := &mockConfigClient{
+		streams: []*mockWatchStream{
+			{
+				ctx: ctx,
+				responses: []*configpb.WatchResponse{
+					{
+						Type:  configpb.ChangeType_CHANGE_TYPE_SET,
+						Entry: nil, // nil entry should be skipped
+					},
+					{
+						Type: configpb.ChangeType_CHANGE_TYPE_SET,
+						Entry: &configpb.Entry{
+							Namespace: "test",
+							Key:       "valid-key",
+							Value:     []byte(`"val"`),
+							Codec:     "json",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	store.mu.Lock()
+	store.client = mockClient
+	store.mu.Unlock()
+
+	result, err := store.WatchWithResult(ctx, config.WatchFilter{})
+	if err != nil {
+		t.Fatalf("WatchWithResult failed: %v", err)
+	}
+
+	evt := <-result.Events
+	if evt.Key != "valid-key" {
+		t.Errorf("expected key 'valid-key' (nil entry skipped), got %q", evt.Key)
+	}
+
+	for range result.Events {
+	}
+}
+
+func TestRemoteError_Error(t *testing.T) {
+	err := &RemoteError{Code: codes.Internal, Message: "boom"}
+	want := "config: remote error (Internal): boom"
+	if got := err.Error(); got != want {
+		t.Errorf("RemoteError.Error() = %q, want %q", got, want)
+	}
+}
+
+func TestPermissionDeniedError_Error(t *testing.T) {
+	t.Run("with message", func(t *testing.T) {
+		err := &PermissionDeniedError{Message: "no access"}
+		want := "config: permission denied: no access"
+		if got := err.Error(); got != want {
+			t.Errorf("Error() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("without message", func(t *testing.T) {
+		err := &PermissionDeniedError{}
+		want := "config: permission denied"
+		if got := err.Error(); got != want {
+			t.Errorf("Error() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("Is ErrPermissionDenied", func(t *testing.T) {
+		err := &PermissionDeniedError{Message: "test"}
+		if !errors.Is(err, ErrPermissionDenied) {
+			t.Error("PermissionDeniedError should match ErrPermissionDenied via Is()")
+		}
+	})
 }

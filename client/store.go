@@ -234,7 +234,8 @@ func (s *RemoteStore) resetCircuit() {
 }
 
 // retry executes fn with retries and exponential backoff.
-func (s *RemoteStore) retry(ctx context.Context, fn func() error) error {
+// If callTimeout is configured, each attempt's context is wrapped with a deadline.
+func (s *RemoteStore) retry(ctx context.Context, fn func(ctx context.Context) error) error {
 	var lastErr error
 	backoff := s.opts.retryBackoff
 
@@ -257,7 +258,15 @@ func (s *RemoteStore) retry(ctx context.Context, fn func() error) error {
 			}
 		}
 
-		lastErr = fn()
+		// Optionally wrap the context with a per-call timeout
+		attemptCtx := ctx
+		if s.opts.callTimeout > 0 {
+			var cancel context.CancelFunc
+			attemptCtx, cancel = context.WithTimeout(ctx, s.opts.callTimeout)
+			defer cancel()
+		}
+
+		lastErr = fn(attemptCtx)
 		if lastErr == nil {
 			s.recordSuccess()
 			return nil
@@ -296,7 +305,7 @@ func isNonRetryable(err error) bool {
 // Get retrieves a configuration value by namespace and key.
 func (s *RemoteStore) Get(ctx context.Context, namespace, key string) (config.Value, error) {
 	var result config.Value
-	err := s.retry(ctx, func() error {
+	err := s.retry(ctx, func(ctx context.Context) error {
 		client, err := s.getClient()
 		if err != nil {
 			return err
@@ -333,7 +342,7 @@ func (s *RemoteStore) Set(ctx context.Context, namespace, key string, value conf
 	}
 
 	var result config.Value
-	err = s.retry(ctx, func() error {
+	err = s.retry(ctx, func(ctx context.Context) error {
 		client, err := s.getClient()
 		if err != nil {
 			return err
@@ -357,7 +366,7 @@ func (s *RemoteStore) Set(ctx context.Context, namespace, key string, value conf
 
 // Delete removes a configuration value by namespace and key.
 func (s *RemoteStore) Delete(ctx context.Context, namespace, key string) error {
-	return s.retry(ctx, func() error {
+	return s.retry(ctx, func(ctx context.Context) error {
 		client, err := s.getClient()
 		if err != nil {
 			return err
@@ -374,7 +383,7 @@ func (s *RemoteStore) Delete(ctx context.Context, namespace, key string) error {
 // Find returns a page of keys and values matching the filter within a namespace.
 func (s *RemoteStore) Find(ctx context.Context, namespace string, filter config.Filter) (config.Page, error) {
 	var result config.Page
-	err := s.retry(ctx, func() error {
+	err := s.retry(ctx, func(ctx context.Context) error {
 		client, err := s.getClient()
 		if err != nil {
 			return err
@@ -407,8 +416,9 @@ type WatchResult struct {
 	// The channel is closed when the watch ends.
 	Events <-chan config.ChangeEvent
 
-	// Err returns the error that caused the watch to end, or nil if cancelled.
-	// This method blocks until the watch goroutine exits.
+	// Err returns the error that caused the watch to end, or nil if it was
+	// cancelled normally. This method blocks until the watch goroutine exits.
+	// It should only be called once; subsequent calls may return nil.
 	Err func() error
 
 	// Stop cancels the watch. Safe to call multiple times.
@@ -585,6 +595,9 @@ func (s *RemoteStore) watchStream(
 			event.Value = protoToValue(resp.Entry)
 		case configpb.ChangeType_CHANGE_TYPE_DELETE:
 			event.Type = config.ChangeTypeDelete
+		default:
+			// Skip unrecognized or unspecified change types
+			continue
 		}
 
 		// Send with backpressure awareness

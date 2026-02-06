@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"github.com/rbaliyan/config/memory"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -758,4 +761,400 @@ func TestLoggingInterceptor(t *testing.T) {
 		t.Fatal("expected error from failing handler")
 	}
 }
+
+// mockWatchServer implements configpb.ConfigService_WatchServer for testing.
+type mockWatchServer struct {
+	grpc.ServerStream
+	ctx       context.Context
+	mu        sync.Mutex
+	responses []*configpb.WatchResponse
+	sendErr   error
+}
+
+func (m *mockWatchServer) Context() context.Context {
+	return m.ctx
+}
+
+func (m *mockWatchServer) Send(resp *configpb.WatchResponse) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sendErr != nil {
+		return m.sendErr
+	}
+	m.responses = append(m.responses, resp)
+	return nil
+}
+
+func (m *mockWatchServer) SetHeader(metadata.MD) error { return nil }
+func (m *mockWatchServer) SendHeader(metadata.MD) error { return nil }
+func (m *mockWatchServer) SetTrailer(metadata.MD)       {}
+func (m *mockWatchServer) SendMsg(any) error             { return nil }
+func (m *mockWatchServer) RecvMsg(any) error             { return nil }
+
+func TestService_Watch_AllowAll(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	store.Set(ctx, "test", "key1", config.NewValue("value1"))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream := &mockWatchServer{ctx: watchCtx}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{
+			Namespaces: []string{"test"},
+		}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Set(ctx, "test", "key2", config.NewValue("value2"))
+
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+
+	err := <-errCh
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Watch returned unexpected error: %v", err)
+	}
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.responses) == 0 {
+		t.Error("expected at least one watch response")
+	}
+}
+
+func TestService_Watch_DenyAll(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store)
+
+	stream := &mockWatchServer{ctx: ctx}
+
+	err := svc.Watch(&configpb.WatchRequest{
+		Namespaces: []string{"test"},
+	}, stream)
+	if err == nil {
+		t.Fatal("expected permission denied error")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	}
+}
+
+func TestService_Watch_NoNamespaces(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream := &mockWatchServer{ctx: watchCtx}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Set(ctx, "any-ns", "somekey", config.NewValue("val"))
+
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+
+	err := <-errCh
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Watch returned unexpected error: %v", err)
+	}
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.responses) == 0 {
+		t.Error("expected at least one watch response for wildcard watch")
+	}
+}
+
+func TestService_Watch_NoNamespaces_DenyAll(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store)
+
+	stream := &mockWatchServer{ctx: ctx}
+
+	err := svc.Watch(&configpb.WatchRequest{}, stream)
+	if err == nil {
+		t.Fatal("expected permission denied error")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	}
+}
+
+func TestService_Watch_StoreWatchError(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	store.Connect(ctx)
+	store.Close(ctx) // Close the store so Watch returns an error
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	stream := &mockWatchServer{ctx: ctx}
+
+	err := svc.Watch(&configpb.WatchRequest{
+		Namespaces: []string{"test"},
+	}, stream)
+	if err == nil {
+		t.Fatal("expected error from store.Watch on closed store")
+	}
+}
+
+func TestService_Watch_ChannelCloses(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream := &mockWatchServer{ctx: watchCtx}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{
+			Namespaces: []string{"test"},
+		}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Close(ctx)
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("Watch returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch did not return after store close")
+	}
+}
+
+func TestService_Watch_SendError(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sendErr := errors.New("send failed")
+	stream := &mockWatchServer{ctx: watchCtx, sendErr: sendErr}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{
+			Namespaces: []string{"test"},
+		}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Set(ctx, "test", "key1", config.NewValue("val"))
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected error from Send failure")
+		}
+		if err.Error() != sendErr.Error() {
+			t.Errorf("expected send error, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch did not return after send error")
+	}
+}
+
+func TestService_Watch_DeleteEvent(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	store.Set(ctx, "test", "del-key", config.NewValue("to-delete"))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream := &mockWatchServer{ctx: watchCtx}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{
+			Namespaces: []string{"test"},
+		}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Delete(ctx, "test", "del-key")
+
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+
+	err := <-errCh
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Watch returned unexpected error: %v", err)
+	}
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+
+	foundDelete := false
+	for _, resp := range stream.responses {
+		if resp.Type == configpb.ChangeType_CHANGE_TYPE_DELETE {
+			foundDelete = true
+			break
+		}
+	}
+	if !foundDelete {
+		t.Error("expected at least one DELETE change type in responses")
+	}
+}
+
+func TestService_Watch_MultipleNamespaces(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	svc := NewService(store, WithAuthorizer(AllowAll()))
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream := &mockWatchServer{ctx: watchCtx}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Watch(&configpb.WatchRequest{
+			Namespaces: []string{"ns1", "ns2"},
+		}, stream)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.Set(ctx, "ns1", "k1", config.NewValue("v1"))
+	store.Set(ctx, "ns2", "k2", config.NewValue("v2"))
+
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+
+	err := <-errCh
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Watch returned unexpected error: %v", err)
+	}
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.responses) < 2 {
+		t.Errorf("expected at least 2 responses for 2 namespaces, got %d", len(stream.responses))
+	}
+}
+
+func TestService_Watch_PartialNamespaceDenied(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer store.Close(ctx)
+
+	auth := &namespaceAuthorizer{allowed: map[string]bool{"allowed": true}}
+	svc := NewService(store, WithAuthorizer(auth))
+
+	stream := &mockWatchServer{ctx: ctx}
+
+	err := svc.Watch(&configpb.WatchRequest{
+		Namespaces: []string{"allowed", "denied"},
+	}, stream)
+	if err == nil {
+		t.Fatal("expected error when one namespace is denied")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	}
+}
+
+type namespaceAuthorizer struct {
+	allowed map[string]bool
+}
+
+func (a *namespaceAuthorizer) Authorize(_ context.Context, req AuthRequest) error {
+	if req.Namespace == "" {
+		return status.Errorf(codes.PermissionDenied, "wildcard not allowed")
+	}
+	if a.allowed[req.Namespace] {
+		return nil
+	}
+	return status.Errorf(codes.PermissionDenied, "namespace %q not allowed", req.Namespace)
+}
+
 

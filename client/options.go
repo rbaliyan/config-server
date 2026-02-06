@@ -20,6 +20,7 @@ type options struct {
 	maxRetries       int
 	retryBackoff     time.Duration
 	maxBackoff       time.Duration
+	callTimeout      time.Duration
 	enableCircuit    bool
 	circuitThreshold int
 	circuitTimeout   time.Duration
@@ -115,6 +116,15 @@ func WithRetry(maxRetries int, initialBackoff, maxBackoff time.Duration) Option 
 		o.maxRetries = maxRetries
 		o.retryBackoff = initialBackoff
 		o.maxBackoff = maxBackoff
+	}
+}
+
+// WithCallTimeout sets a per-attempt timeout for each gRPC call within a retry loop.
+// When set to a value > 0, each attempt's context will be wrapped with a deadline.
+// Default is 0 (no per-call timeout; uses the caller's context deadline only).
+func WithCallTimeout(d time.Duration) Option {
+	return func(o *options) {
+		o.callTimeout = d
 	}
 }
 
