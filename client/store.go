@@ -260,13 +260,16 @@ func (s *RemoteStore) retry(ctx context.Context, fn func(ctx context.Context) er
 
 		// Optionally wrap the context with a per-call timeout
 		attemptCtx := ctx
+		var cancel context.CancelFunc
 		if s.opts.callTimeout > 0 {
-			var cancel context.CancelFunc
 			attemptCtx, cancel = context.WithTimeout(ctx, s.opts.callTimeout)
-			defer cancel()
 		}
 
 		lastErr = fn(attemptCtx)
+
+		if cancel != nil {
+			cancel()
+		}
 		if lastErr == nil {
 			s.recordSuccess()
 			return nil

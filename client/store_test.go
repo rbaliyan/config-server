@@ -1524,6 +1524,114 @@ func TestRemoteError_Error(t *testing.T) {
 	}
 }
 
+func TestWithCallTimeout(t *testing.T) {
+	store, err := NewRemoteStore("localhost:9999",
+		WithInsecure(),
+		WithCallTimeout(50*time.Millisecond),
+		WithRetry(0, 0, 0),
+	)
+	if err != nil {
+		t.Fatalf("NewRemoteStore failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := store.Connect(ctx); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	defer store.Close(ctx)
+
+	// Inject a mock client that sleeps longer than the call timeout
+	slowClient := &slowConfigClient{delay: 200 * time.Millisecond}
+
+	store.mu.Lock()
+	store.client = slowClient
+	store.mu.Unlock()
+
+	_, err = store.Get(ctx, "ns", "key")
+	if err == nil {
+		t.Fatal("Get() should have failed with deadline exceeded")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Get() error = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+// slowConfigClient is a mock that sleeps before responding to Get.
+type slowConfigClient struct {
+	configpb.ConfigServiceClient
+	delay time.Duration
+}
+
+func (c *slowConfigClient) Get(ctx context.Context, in *configpb.GetRequest, opts ...grpc.CallOption) (*configpb.GetResponse, error) {
+	select {
+	case <-time.After(c.delay):
+		return &configpb.GetResponse{}, nil
+	case <-ctx.Done():
+		return nil, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+	}
+}
+
+func TestOptionValidation(t *testing.T) {
+	t.Run("WithRetry negative maxRetries", func(t *testing.T) {
+		store, _ := NewRemoteStore("localhost:9999",
+			WithInsecure(),
+			WithRetry(-1, 0, 0),
+		)
+		if store.opts.maxRetries != 0 {
+			t.Errorf("maxRetries = %d, want 0", store.opts.maxRetries)
+		}
+		if store.opts.retryBackoff != 100*time.Millisecond {
+			t.Errorf("retryBackoff = %v, want 100ms", store.opts.retryBackoff)
+		}
+		if store.opts.maxBackoff != 5*time.Second {
+			t.Errorf("maxBackoff = %v, want 5s", store.opts.maxBackoff)
+		}
+	})
+
+	t.Run("WithCircuitBreaker zero values", func(t *testing.T) {
+		store, _ := NewRemoteStore("localhost:9999",
+			WithInsecure(),
+			WithCircuitBreaker(0, 0),
+		)
+		if store.opts.circuitThreshold != 1 {
+			t.Errorf("circuitThreshold = %d, want 1", store.opts.circuitThreshold)
+		}
+		if store.opts.circuitTimeout != 30*time.Second {
+			t.Errorf("circuitTimeout = %v, want 30s", store.opts.circuitTimeout)
+		}
+	})
+
+	t.Run("WithWatchBufferSize negative", func(t *testing.T) {
+		store, _ := NewRemoteStore("localhost:9999",
+			WithInsecure(),
+			WithWatchBufferSize(-1),
+		)
+		if store.opts.watchBufferSize != 0 {
+			t.Errorf("watchBufferSize = %d, want 0", store.opts.watchBufferSize)
+		}
+	})
+
+	t.Run("WithWatchMaxErrors zero", func(t *testing.T) {
+		store, _ := NewRemoteStore("localhost:9999",
+			WithInsecure(),
+			WithWatchMaxErrors(0),
+		)
+		if store.opts.watchMaxErrors != 1 {
+			t.Errorf("watchMaxErrors = %d, want 1", store.opts.watchMaxErrors)
+		}
+	})
+
+	t.Run("WithCallTimeout negative", func(t *testing.T) {
+		store, _ := NewRemoteStore("localhost:9999",
+			WithInsecure(),
+			WithCallTimeout(-1),
+		)
+		if store.opts.callTimeout != 0 {
+			t.Errorf("callTimeout = %v, want 0", store.opts.callTimeout)
+		}
+	})
+}
+
 func TestPermissionDeniedError_Error(t *testing.T) {
 	t.Run("with message", func(t *testing.T) {
 		err := &PermissionDeniedError{Message: "no access"}

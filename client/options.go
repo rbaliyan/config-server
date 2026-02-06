@@ -113,6 +113,15 @@ func WithInsecure() Option {
 // WithRetry configures retry behavior for failed operations.
 func WithRetry(maxRetries int, initialBackoff, maxBackoff time.Duration) Option {
 	return func(o *options) {
+		if maxRetries < 0 {
+			maxRetries = 0
+		}
+		if initialBackoff <= 0 {
+			initialBackoff = 100 * time.Millisecond
+		}
+		if maxBackoff <= 0 {
+			maxBackoff = 5 * time.Second
+		}
 		o.maxRetries = maxRetries
 		o.retryBackoff = initialBackoff
 		o.maxBackoff = maxBackoff
@@ -124,6 +133,9 @@ func WithRetry(maxRetries int, initialBackoff, maxBackoff time.Duration) Option 
 // Default is 0 (no per-call timeout; uses the caller's context deadline only).
 func WithCallTimeout(d time.Duration) Option {
 	return func(o *options) {
+		if d < 0 {
+			d = 0
+		}
 		o.callTimeout = d
 	}
 }
@@ -132,6 +144,12 @@ func WithCallTimeout(d time.Duration) Option {
 // The threshold is the number of consecutive failures before the circuit opens.
 func WithCircuitBreaker(threshold int, timeout time.Duration) Option {
 	return func(o *options) {
+		if threshold < 1 {
+			threshold = 1
+		}
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
 		o.enableCircuit = true
 		o.circuitThreshold = threshold
 		o.circuitTimeout = timeout
@@ -142,6 +160,9 @@ func WithCircuitBreaker(threshold int, timeout time.Duration) Option {
 // Default is 100. Set to 0 for unbuffered (backpressure).
 func WithWatchBufferSize(size int) Option {
 	return func(o *options) {
+		if size < 0 {
+			size = 0
+		}
 		o.watchBufferSize = size
 	}
 }
@@ -150,6 +171,9 @@ func WithWatchBufferSize(size int) Option {
 // before the watch gives up. Default is 10.
 func WithWatchMaxErrors(n int) Option {
 	return func(o *options) {
+		if n < 1 {
+			n = 1
+		}
 		o.watchMaxErrors = n
 	}
 }
