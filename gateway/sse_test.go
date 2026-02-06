@@ -771,16 +771,17 @@ func TestWriteHTTPError(t *testing.T) {
 		name     string
 		err      error
 		wantCode int
+		wantBody string // substring expected in body
 	}{
-		{"PermissionDenied", status.Error(codes.PermissionDenied, "forbidden"), http.StatusForbidden},
-		{"Unauthenticated", status.Error(codes.Unauthenticated, "no creds"), http.StatusUnauthorized},
-		{"InvalidArgument", status.Error(codes.InvalidArgument, "bad input"), http.StatusBadRequest},
-		{"NotFound", status.Error(codes.NotFound, "missing"), http.StatusNotFound},
-		{"AlreadyExists", status.Error(codes.AlreadyExists, "dup"), http.StatusConflict},
-		{"Unimplemented", status.Error(codes.Unimplemented, "not impl"), http.StatusNotImplemented},
-		{"Unavailable", status.Error(codes.Unavailable, "down"), http.StatusServiceUnavailable},
-		{"Internal", status.Error(codes.Internal, "oops"), http.StatusInternalServerError},
-		{"non-gRPC error", fmt.Errorf("plain error"), http.StatusInternalServerError},
+		{"PermissionDenied", status.Error(codes.PermissionDenied, "forbidden"), http.StatusForbidden, "forbidden"},
+		{"Unauthenticated", status.Error(codes.Unauthenticated, "no creds"), http.StatusUnauthorized, "no creds"},
+		{"InvalidArgument", status.Error(codes.InvalidArgument, "bad input"), http.StatusBadRequest, "bad input"},
+		{"NotFound", status.Error(codes.NotFound, "missing"), http.StatusNotFound, "missing"},
+		{"AlreadyExists", status.Error(codes.AlreadyExists, "dup"), http.StatusConflict, "dup"},
+		{"Unimplemented", status.Error(codes.Unimplemented, "not impl"), http.StatusNotImplemented, "not impl"},
+		{"Unavailable", status.Error(codes.Unavailable, "connection refused"), http.StatusInternalServerError, "internal error"},
+		{"Internal", status.Error(codes.Internal, "db host=10.0.0.1"), http.StatusInternalServerError, "internal error"},
+		{"non-gRPC error", fmt.Errorf("raw error details"), http.StatusInternalServerError, "internal error"},
 	}
 
 	for _, tt := range tests {
@@ -789,6 +790,10 @@ func TestWriteHTTPError(t *testing.T) {
 			writeHTTPError(rec, tt.err)
 			if rec.Code != tt.wantCode {
 				t.Errorf("writeHTTPError(%v) status = %d, want %d", tt.err, rec.Code, tt.wantCode)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, tt.wantBody) {
+				t.Errorf("writeHTTPError(%v) body = %q, want substring %q", tt.err, body, tt.wantBody)
 			}
 		})
 	}

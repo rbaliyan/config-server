@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,13 +38,23 @@ type sseWriter struct {
 	flusher http.Flusher
 }
 
-// writeEvent writes an SSE event frame. Both eventType and data must be
-// single-line: newlines are stripped defensively to prevent frame injection.
+// writeEvent writes an SSE event frame. The eventType is sanitized to prevent
+// frame injection. If data contains newlines, it is split into multiple
+// "data:" lines per the SSE specification (though json.Marshal, the only
+// current encoder, guarantees single-line output).
 func (sw *sseWriter) writeEvent(eventType string, data []byte) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	eventType = sanitizeSSEField(eventType)
-	if _, err := fmt.Fprintf(sw.w, "event: %s\ndata: %s\n\n", eventType, data); err != nil {
+	if _, err := fmt.Fprintf(sw.w, "event: %s\n", eventType); err != nil {
+		return err
+	}
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if _, err := fmt.Fprintf(sw.w, "data: %s\n", line); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(sw.w, "\n"); err != nil {
 		return err
 	}
 	sw.flusher.Flush()
@@ -364,15 +375,18 @@ func writeSSEError(sw *sseWriter, err error) {
 	_ = sw.writeEvent("error", mustJSON(map[string]string{"error": msg}))
 }
 
-// writeHTTPError maps a gRPC error to an HTTP status code before SSE headers are sent.
+// writeHTTPError maps a gRPC error to an HTTP status code before SSE headers
+// are sent. For client-actionable errors, the gRPC message is forwarded.
+// For internal errors, a generic message is sent to avoid leaking details.
 func writeHTTPError(w http.ResponseWriter, err error) {
 	st, ok := status.FromError(err)
 	if !ok {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	var httpCode int
+	clientActionable := true
 	switch st.Code() {
 	case codes.PermissionDenied:
 		httpCode = http.StatusForbidden
@@ -386,13 +400,16 @@ func writeHTTPError(w http.ResponseWriter, err error) {
 		httpCode = http.StatusConflict
 	case codes.Unimplemented:
 		httpCode = http.StatusNotImplemented
-	case codes.Unavailable:
-		httpCode = http.StatusServiceUnavailable
 	default:
 		httpCode = http.StatusInternalServerError
+		clientActionable = false
 	}
 
-	http.Error(w, st.Message(), httpCode)
+	msg := "internal error"
+	if clientActionable {
+		msg = st.Message()
+	}
+	http.Error(w, msg, httpCode)
 }
 
 // mustJSON marshals v to JSON, returning a fallback error object on failure.
