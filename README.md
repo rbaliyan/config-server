@@ -3,6 +3,9 @@
 [![CI](https://github.com/rbaliyan/config-server/actions/workflows/ci.yml/badge.svg)](https://github.com/rbaliyan/config-server/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/rbaliyan/config-server.svg)](https://pkg.go.dev/github.com/rbaliyan/config-server)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rbaliyan/config-server)](https://goreportcard.com/report/github.com/rbaliyan/config-server)
+[![Release](https://img.shields.io/github/v/release/rbaliyan/config-server)](https://github.com/rbaliyan/config-server/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/rbaliyan/config-server/badge)](https://scorecard.dev/viewer/?uri=github.com/rbaliyan/config-server)
 
 A gRPC configuration server with HTTP/JSON gateway, pluggable authorization, and a Go client that implements `config.Store`.
 
