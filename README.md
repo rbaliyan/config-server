@@ -97,8 +97,7 @@ The gateway exposes a RESTful API auto-mapped from the proto definitions:
 | `DELETE` | Delete | `/v1/namespaces/{namespace}/keys/{key}` |
 | `GET` | List | `/v1/namespaces/{namespace}/keys?prefix=app/&limit=100&cursor=...` |
 | `GET` | CheckAccess | `/v1/namespaces/{namespace}/access` |
-
-Watch is gRPC-only (server-streaming has no REST equivalent).
+| `GET` | Watch (SSE) | `/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/` |
 
 #### Examples
 
@@ -119,6 +118,43 @@ curl -X DELETE http://localhost:8080/v1/namespaces/production/keys/app/timeout
 
 # Check access
 curl http://localhost:8080/v1/namespaces/production/access
+
+# Watch for changes (SSE stream)
+curl -N 'http://localhost:8080/v1/watch?namespaces=production&prefixes=app/'
+```
+
+#### SSE Watch
+
+The `/v1/watch` endpoint streams real-time config changes as Server-Sent Events, making Watch available to HTTP clients (browsers, curl, etc.).
+
+Query parameters:
+- `namespaces` (repeated) — namespaces to watch (empty = all)
+- `prefixes` (repeated) — key prefixes to filter on (empty = all)
+
+SSE stream format:
+```
+retry: 5000
+: connected
+
+event: set
+data: {"type":"SET","namespace":"production","key":"app/timeout","value":"MzA=","codec":"json","version":2}
+
+event: delete
+data: {"type":"DELETE","namespace":"production","key":"app/old"}
+
+: heartbeat
+```
+
+The stream begins with a `retry: 5000` hint (reconnect after 5 seconds) and a `: connected` comment. Heartbeat comments are sent every 30 seconds (configurable via `WithHeartbeatInterval`) to keep connections alive through proxies.
+
+**Note:** `Last-Event-ID` resumption is not supported. On reconnect, clients receive events from the current point forward — there is no replay of missed events. For durable delivery, use the gRPC Watch stream with the Go client's automatic reconnection (`WithWatchReconnect`).
+
+JavaScript example:
+```javascript
+const es = new EventSource('/v1/watch?namespaces=production&prefixes=app/');
+es.addEventListener('set', (e) => console.log('SET:', JSON.parse(e.data)));
+es.addEventListener('delete', (e) => console.log('DELETE:', JSON.parse(e.data)));
+es.addEventListener('error', (e) => console.error('Error:', e.data));
 ```
 
 #### Gateway Setup

@@ -22,7 +22,8 @@ config-server/
 │   └── options.go       # Service options (WithAuthorizer)
 ├── gateway/             # HTTP/JSON gateway via gRPC-Gateway
 │   ├── handler.go       # NewHandler (remote), NewInProcessHandler (in-process)
-│   └── options.go       # Gateway options (TLS, dial opts, mux opts)
+│   ├── sse.go           # SSE Watch endpoint (Server-Sent Events for /v1/watch)
+│   └── options.go       # Gateway options (TLS, dial opts, mux opts, heartbeat)
 ├── client/              # Go client implementing config.Store
 │   ├── store.go         # RemoteStore with retry, circuit breaker, watch
 │   └── options.go       # Client options (TLS, retry, circuit, watch, keepalive)
@@ -49,8 +50,7 @@ config-server/
 | DELETE | `/v1/namespaces/{namespace}/keys/{key}` | Delete |
 | GET | `/v1/namespaces/{namespace}/keys` | List |
 | GET | `/v1/namespaces/{namespace}/access` | CheckAccess |
-
-Watch is gRPC-only (server-streaming).
+| GET | `/v1/watch?namespaces=...&prefixes=...` | Watch (SSE) |
 
 ## Code Style
 

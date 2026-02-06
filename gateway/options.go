@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"crypto/tls"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -10,10 +11,11 @@ import (
 )
 
 type options struct {
-	dialOpts  []grpc.DialOption
-	muxOpts   []runtime.ServeMuxOption
-	secure    bool
-	tlsConfig *tls.Config
+	dialOpts          []grpc.DialOption
+	muxOpts           []runtime.ServeMuxOption
+	secure            bool
+	tlsConfig         *tls.Config
+	heartbeatInterval time.Duration
 }
 
 // Option configures the gateway handler.
@@ -51,6 +53,19 @@ func WithInsecure() Option {
 		o.tlsConfig = nil
 	}
 }
+
+// WithHeartbeatInterval sets the interval for SSE heartbeat comments.
+// Heartbeats keep the connection alive through proxies and load balancers.
+// Default is 30 seconds. Values <= 0 are ignored.
+func WithHeartbeatInterval(d time.Duration) Option {
+	return func(o *options) {
+		if d > 0 {
+			o.heartbeatInterval = d
+		}
+	}
+}
+
+const defaultHeartbeatInterval = 30 * time.Second
 
 // buildDialOpts constructs the gRPC dial options from configuration.
 func (o *options) buildDialOpts() []grpc.DialOption {
