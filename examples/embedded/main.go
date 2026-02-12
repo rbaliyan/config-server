@@ -38,7 +38,7 @@ func main() {
 	_, _ = store.Set(ctx, "staging", "api/key", config.NewValue("staging-key"))
 
 	// Create config service with custom authorizer
-	configSvc := service.NewService(store,
+	configSvc, err := service.NewService(store,
 		service.WithAuthorizer(&namespaceAuthorizer{
 			allowed: map[string][]string{
 				"admin":    {"production", "staging"},
@@ -46,6 +46,9 @@ func main() {
 			},
 		}),
 	)
+	if err != nil {
+		log.Fatal("failed to create config service:", err)
+	}
 
 	// Create gRPC server with auth interceptor
 	grpcServer := grpc.NewServer(

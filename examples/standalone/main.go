@@ -39,9 +39,13 @@ func main() {
 	_, _ = store.Set(ctx, "default", "database/port", config.NewValue(5432))
 
 	// Create the config service with AllowAll authorizer (for demo only!)
-	configSvc := service.NewService(store,
+	configSvc, err := service.NewService(store,
 		service.WithAuthorizer(service.AllowAll()),
 	)
+	if err != nil {
+		logger.Error("failed to create config service", "error", err)
+		os.Exit(1)
+	}
 
 	// Create gRPC server with interceptors
 	grpcServer := grpc.NewServer(
