@@ -120,7 +120,10 @@ func setupSSETest(t *testing.T, opts ...service.Option) (*Handler, config.Store)
 	if len(opts) == 0 {
 		opts = []service.Option{service.WithAuthorizer(service.AllowAll())}
 	}
-	svc := service.NewService(store, opts...)
+	svc, err := service.NewService(store, opts...)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	handler, err := NewInProcessHandler(ctx, svc, WithHeartbeatInterval(30*time.Second))
 	if err != nil {
@@ -241,7 +244,10 @@ func TestSSEWatch_Heartbeat(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Use a very short heartbeat interval for testing.
 	handler, err := NewInProcessHandler(ctx, svc, WithHeartbeatInterval(50*time.Millisecond))
@@ -313,7 +319,10 @@ func TestSSEWatch_Authorization(t *testing.T) {
 	defer store.Close(ctx)
 
 	// DenyAll authorizer.
-	svc := service.NewService(store)
+	svc, err := service.NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	handler, err := NewInProcessHandler(ctx, svc)
 	if err != nil {
@@ -547,7 +556,10 @@ func TestHandler_Close_InProcess(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	handler, err := NewInProcessHandler(ctx, svc)
 	if err != nil {
@@ -570,7 +582,10 @@ func TestHandler_Close_InProcess(t *testing.T) {
 func setupBufconn(t *testing.T, store config.Store) *bufconn.Listener {
 	t.Helper()
 
-	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
@@ -671,7 +686,10 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 	defer store.Close(ctx)
 
 	// Use DenyAll authorizer on the server.
-	svc := service.NewService(store)
+	svc, err := service.NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	configpb.RegisterConfigServiceServer(grpcServer, svc)
@@ -940,7 +958,10 @@ func TestSSEWatch_MetadataPropagation(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	handler, err := NewInProcessHandler(ctx, svc, WithHeartbeatInterval(30*time.Second))
 	if err != nil {

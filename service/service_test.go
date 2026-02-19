@@ -31,7 +31,10 @@ func setupTestService(t *testing.T) (*Service, config.Store) {
 		store.Close(ctx)
 	})
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 	return svc, store
 }
 
@@ -193,9 +196,12 @@ func TestService_DenyAllAuthorizer(t *testing.T) {
 	defer store.Close(ctx)
 
 	// Service with DenyAll (default)
-	svc := NewService(store)
+	svc, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
-	_, err := svc.Get(ctx, &configpb.GetRequest{
+	_, err = svc.Get(ctx, &configpb.GetRequest{
 		Namespace: "test",
 		Key:       "key",
 	})
@@ -238,11 +244,14 @@ func TestService_CheckAccess_DenyAll(t *testing.T) {
 	_ = store.Connect(ctx)
 	defer store.Close(ctx)
 
-	svc := NewService(store) // DenyAll is default
+	svc, err := NewService(store) // DenyAll is default
 
 	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
 		Namespace: "test",
 	})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -581,14 +590,14 @@ func TestStreamLoggingInterceptor(t *testing.T) {
 	}
 }
 
-func TestNewService_NilStorePanics(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic for nil store")
-		}
-	}()
-	NewService(nil)
+func TestNewService_NilStoreReturnsError(t *testing.T) {
+	svc, err := NewService(nil)
+	if err == nil {
+		t.Fatal("expected error for nil store, got nil")
+	}
+	if svc != nil {
+		t.Fatal("expected nil service when store is nil")
+	}
 }
 
 func TestNewService_WithOptions(t *testing.T) {
@@ -598,7 +607,10 @@ func TestNewService_WithOptions(t *testing.T) {
 	defer store.Close(ctx)
 
 	auth := AllowAll()
-	svc := NewService(store, WithAuthorizer(auth))
+	svc, err := NewService(store, WithAuthorizer(auth))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 	if svc == nil {
 		t.Fatal("expected non-nil service")
 	}
@@ -637,9 +649,12 @@ func TestService_Get_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
-	_, err := svc.Get(ctx, &configpb.GetRequest{
+	_, err = svc.Get(ctx, &configpb.GetRequest{
 		Namespace: "test",
 		Key:       "key",
 	})
@@ -658,9 +673,12 @@ func TestService_Set_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
-	_, err := svc.Set(ctx, &configpb.SetRequest{
+	_, err = svc.Set(ctx, &configpb.SetRequest{
 		Namespace: "test",
 		Key:       "key",
 		Value:     []byte(`"v"`),
@@ -681,9 +699,12 @@ func TestService_Delete_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
-	_, err := svc.Delete(ctx, &configpb.DeleteRequest{
+	_, err = svc.Delete(ctx, &configpb.DeleteRequest{
 		Namespace: "test",
 		Key:       "key",
 	})
@@ -702,9 +723,12 @@ func TestService_List_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
-	_, err := svc.List(ctx, &configpb.ListRequest{
+	_, err = svc.List(ctx, &configpb.ListRequest{
 		Namespace: "test",
 	})
 	if err == nil {
@@ -811,7 +835,10 @@ func TestService_Watch_AllowAll(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	if _, err := store.Set(ctx, "test", "key1", config.NewValue("value1")); err != nil {
 		t.Fatalf("failed to set test data: %v", err)
@@ -839,7 +866,7 @@ func TestService_Watch_AllowAll(t *testing.T) {
 
 	cancel()
 
-	err := <-errCh
+	err = <-errCh
 	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
@@ -859,11 +886,14 @@ func TestService_Watch_DenyAll(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store)
+	svc, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	stream := &mockWatchServer{ctx: ctx}
 
-	err := svc.Watch(&configpb.WatchRequest{
+	err = svc.Watch(&configpb.WatchRequest{
 		Namespaces: []string{"test"},
 	}, stream)
 	if err == nil {
@@ -886,7 +916,10 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -908,7 +941,7 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 
 	cancel()
 
-	err := <-errCh
+	err = <-errCh
 	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
@@ -928,11 +961,14 @@ func TestService_Watch_NoNamespaces_DenyAll(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store)
+	svc, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	stream := &mockWatchServer{ctx: ctx}
 
-	err := svc.Watch(&configpb.WatchRequest{}, stream)
+	err = svc.Watch(&configpb.WatchRequest{}, stream)
 	if err == nil {
 		t.Fatal("expected permission denied error")
 	}
@@ -951,11 +987,14 @@ func TestService_Watch_StoreWatchError(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx) // Close the store so Watch returns an error
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	stream := &mockWatchServer{ctx: ctx}
 
-	err := svc.Watch(&configpb.WatchRequest{
+	err = svc.Watch(&configpb.WatchRequest{
 		Namespaces: []string{"test"},
 	}, stream)
 	if err == nil {
@@ -970,7 +1009,10 @@ func TestService_Watch_ChannelCloses(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1006,7 +1048,10 @@ func TestService_Watch_SendError(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1048,7 +1093,10 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	if _, err := store.Set(ctx, "test", "del-key", config.NewValue("to-delete")); err != nil {
 		t.Fatalf("failed to set test data: %v", err)
@@ -1076,7 +1124,7 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 
 	cancel()
 
-	err := <-errCh
+	err = <-errCh
 	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
@@ -1104,7 +1152,10 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1131,7 +1182,7 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 
 	cancel()
 
-	err := <-errCh
+	err = <-errCh
 	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
@@ -1152,11 +1203,14 @@ func TestService_Watch_PartialNamespaceDenied(t *testing.T) {
 	defer store.Close(ctx)
 
 	auth := &namespaceAuthorizer{allowed: map[string]bool{"allowed": true}}
-	svc := NewService(store, WithAuthorizer(auth))
+	svc, err := NewService(store, WithAuthorizer(auth))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	stream := &mockWatchServer{ctx: ctx}
 
-	err := svc.Watch(&configpb.WatchRequest{
+	err = svc.Watch(&configpb.WatchRequest{
 		Namespaces: []string{"allowed", "denied"},
 	}, stream)
 	if err == nil {

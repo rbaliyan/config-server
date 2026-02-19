@@ -33,7 +33,10 @@ func setupIntegrationTest(t *testing.T) *RemoteStore {
 	}
 
 	// Create the gRPC service with AllowAll authorizer for testing.
-	svc := service.NewService(memStore, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(memStore, service.WithAuthorizer(service.AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Create a bufconn listener for in-process communication.
 	lis := bufconn.Listen(bufSize)

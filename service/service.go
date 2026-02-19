@@ -20,10 +20,10 @@ type Service struct {
 }
 
 // NewService creates a new ConfigService.
-// Panics if store is nil.
-func NewService(store config.Store, opts ...Option) *Service {
+// Returns an error if store is nil.
+func NewService(store config.Store, opts ...Option) (*Service, error) {
 	if store == nil {
-		panic("config-server: NewService requires a non-nil store")
+		return nil, fmt.Errorf("config-server: NewService requires a non-nil store")
 	}
 	o := &serviceOptions{
 		authorizer: DenyAll(), // Safe default
@@ -34,7 +34,7 @@ func NewService(store config.Store, opts ...Option) *Service {
 	return &Service{
 		store:      store,
 		authorizer: o.authorizer,
-	}
+	}, nil
 }
 
 // validateNamespaceKey checks that namespace and key are non-empty.
