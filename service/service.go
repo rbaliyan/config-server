@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rbaliyan/config"
+	"github.com/rbaliyan/config/codec"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -105,9 +106,15 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 		opts = append(opts, config.WithValueWriteMode(config.WriteModeUpdate))
 	}
 
-	val, err := config.NewValueFromBytes(req.Value, codecName, opts...)
-	if err != nil {
-		return nil, toGRPCError(err)
+	var val config.Value
+	if codec.Get(codecName) != nil {
+		var err error
+		val, err = config.NewValueFromBytes(req.Value, codecName, opts...)
+		if err != nil {
+			return nil, toGRPCError(err)
+		}
+	} else {
+		val = config.NewRawValue(req.Value, codecName, opts...)
 	}
 
 	result, err := s.store.Set(ctx, req.Namespace, req.Key, val)
