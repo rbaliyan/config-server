@@ -282,6 +282,48 @@ func TestService_Set_DefaultCodec(t *testing.T) {
 	}
 }
 
+func TestService_Set_UnknownCodecPassThrough(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	// Binary data that is not valid JSON — simulates client-side encrypted bytes.
+	raw := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+
+	resp, err := svc.Set(ctx, &configpb.SetRequest{
+		Namespace: "test",
+		Key:       "secret",
+		Value:     raw,
+		Codec:     "client:encrypted:json",
+	})
+	if err != nil {
+		t.Fatalf("Set with unknown codec: %v", err)
+	}
+	if resp.Entry == nil {
+		t.Fatal("expected entry, got nil")
+	}
+	if resp.Entry.Codec != "client:encrypted:json" {
+		t.Errorf("codec = %q, want %q", resp.Entry.Codec, "client:encrypted:json")
+	}
+	if string(resp.Entry.Value) != string(raw) {
+		t.Errorf("value = %x, want %x", resp.Entry.Value, raw)
+	}
+
+	// Verify it can be retrieved.
+	getResp, err := svc.Get(ctx, &configpb.GetRequest{
+		Namespace: "test",
+		Key:       "secret",
+	})
+	if err != nil {
+		t.Fatalf("Get after raw Set: %v", err)
+	}
+	if getResp.Entry.Codec != "client:encrypted:json" {
+		t.Errorf("Get codec = %q, want %q", getResp.Entry.Codec, "client:encrypted:json")
+	}
+	if string(getResp.Entry.Value) != string(raw) {
+		t.Errorf("Get value = %x, want %x", getResp.Entry.Value, raw)
+	}
+}
+
 func TestService_Set_WriteModes(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := setupTestService(t)

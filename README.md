@@ -336,6 +336,26 @@ if err := result.Err(); err != nil {
 }
 ```
 
+## Client-Side Codecs
+
+When clients use codecs that the server doesn't have registered (e.g., encryption codecs from `config-crypto`), the server treats the bytes as opaque pass-through. This lets clients encrypt values before sending them without requiring the server to hold encryption keys.
+
+Convention: prefix the codec name with `client:` to signal a client-managed codec.
+
+```go
+// Client-side: create an encrypted codec with client prefix
+encCodec, _ := crypto.NewCodec(jsoncodec.New(), keyProvider, crypto.WithClientCodec())
+// encCodec.Name() == "client:encrypted:json"
+
+// Register locally (client only — server never sees this codec)
+codec.Register(encCodec)
+
+// Set a value — bytes are encrypted before sending
+cfg.Set(ctx, "secrets/api-key", mySecret)
+```
+
+The server stores the encrypted bytes and the codec name `"client:encrypted:json"` without attempting to decode them. On retrieval, the client decodes locally.
+
 ## Conditional Writes
 
 ```go
