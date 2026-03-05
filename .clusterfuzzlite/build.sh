@@ -1,0 +1,7 @@
+#!/bin/bash -eu
+compile_native_go_fuzzer github.com/rbaliyan/config-server/gateway FuzzSanitizeSSEField fuzz_sanitize_sse_field
+compile_native_go_fuzzer github.com/rbaliyan/config-server/gateway FuzzParseWatchQuery fuzz_parse_watch_query
+compile_native_go_fuzzer github.com/rbaliyan/config-server/gateway FuzzIsForwardableHeader fuzz_is_forwardable_header
+compile_native_go_fuzzer github.com/rbaliyan/config-server/service FuzzServiceGet fuzz_service_get
+compile_native_go_fuzzer github.com/rbaliyan/config-server/service FuzzServiceSet fuzz_service_set
+compile_native_go_fuzzer github.com/rbaliyan/config-server/service FuzzServiceList fuzz_service_list
