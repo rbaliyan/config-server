@@ -245,13 +245,13 @@ func TestService_CheckAccess_DenyAll(t *testing.T) {
 	defer store.Close(ctx)
 
 	svc, err := NewService(store) // DenyAll is default
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
 		Namespace: "test",
 	})
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

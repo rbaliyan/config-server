@@ -50,9 +50,12 @@ func main() {
     store.Connect(ctx)
     defer store.Close(ctx)
 
-    svc := service.NewService(store,
+    svc, err := service.NewService(store,
         service.WithAuthorizer(service.AllowAll()), // dev only!
     )
+    if err != nil {
+        log.Fatal(err)
+    }
 
     grpcServer := grpc.NewServer()
     configpb.RegisterConfigServiceServer(grpcServer, svc)
@@ -181,7 +184,7 @@ http.Handle("/", handler)
 Or run in-process (no network hop):
 
 ```go
-svc := service.NewService(store, service.WithAuthorizer(auth))
+svc, _ := service.NewService(store, service.WithAuthorizer(auth))
 handler, _ := gateway.NewInProcessHandler(ctx, svc)
 http.Handle("/", handler)
 ```
@@ -245,7 +248,7 @@ func (a *rbacAuthorizer) Authorize(ctx context.Context, req service.AuthRequest)
 }
 
 // 3. Wire it up
-svc := service.NewService(store,
+svc, _ := service.NewService(store,
     service.WithAuthorizer(&rbacAuthorizer{
         allowed: map[string][]string{
             "admin":    {"production", "staging"},

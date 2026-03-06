@@ -16,7 +16,11 @@ func FuzzServiceGet(f *testing.F) {
 	f.Add("special!ns", "key/../traversal")
 	f.Add("prod", "/leading-slash")
 
+	ctx := context.Background()
 	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		f.Fatal(err)
+	}
 	svc, err := NewService(store, WithAuthorizer(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
@@ -37,7 +41,11 @@ func FuzzServiceSet(f *testing.F) {
 	f.Add("ns", "key", []byte(`invalid json`), "json")
 	f.Add("ns", "key", []byte(`value: true`), "yaml")
 
+	ctx := context.Background()
 	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		f.Fatal(err)
+	}
 	svc, err := NewService(store, WithAuthorizer(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
@@ -58,7 +66,11 @@ func FuzzServiceList(f *testing.F) {
 	f.Add("", "", int32(0), "")
 	f.Add("ns", "prefix", int32(-1), "cursor123")
 
+	ctx := context.Background()
 	store := memory.NewStore()
+	if err := store.Connect(ctx); err != nil {
+		f.Fatal(err)
+	}
 	svc, err := NewService(store, WithAuthorizer(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
