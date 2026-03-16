@@ -96,11 +96,23 @@ func (s *RemoteStore) setState(state ConnState) {
 
 // Connect establishes the connection to the config server.
 // The context is reserved for future use.
+//
+// Note: the onStateChange callback (set via WithStateCallback) is invoked
+// outside the internal lock. The callback must not call back into this store
+// on the same goroutine to avoid deadlock.
 func (s *RemoteStore) Connect(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.State() == ConnStateClosed {
+		return config.ErrStoreClosed
+	}
+
+	// Transition to connecting before acquiring the lock so that the
+	// onStateChange callback is never invoked under s.mu.
+	s.setState(ConnStateConnecting)
+
+	s.mu.Lock()
+	// Re-check after acquiring lock in case Close() raced with us.
+	if s.State() == ConnStateClosed {
+		s.mu.Unlock()
 		return config.ErrStoreClosed
 	}
 
@@ -111,19 +123,22 @@ func (s *RemoteStore) Connect(ctx context.Context) error {
 		s.client = nil
 	}
 
-	s.setState(ConnStateConnecting)
-
 	// Build dial options
 	dialOpts := s.opts.buildDialOpts()
 
 	conn, err := grpc.NewClient(s.addr, dialOpts...)
 	if err != nil {
+		s.mu.Unlock()
 		s.setState(ConnStateDisconnected)
 		return err
 	}
 
 	s.conn = conn
 	s.client = configpb.NewConfigServiceClient(conn)
+	s.mu.Unlock()
+
+	// setState called after releasing s.mu so onStateChange callbacks can
+	// safely call back into the store (e.g. Ready()) without deadlocking.
 	s.setState(ConnStateConnected)
 	s.resetCircuit()
 
@@ -294,7 +309,9 @@ func isNonRetryable(err error) bool {
 		errors.Is(err, config.ErrInvalidKey),
 		errors.Is(err, config.ErrInvalidNamespace),
 		errors.Is(err, config.ErrInvalidValue),
-		errors.Is(err, config.ErrReadOnly):
+		errors.Is(err, config.ErrReadOnly),
+		// Store is permanently closed — retrying cannot succeed.
+		errors.Is(err, config.ErrStoreClosed):
 		return true
 	}
 	// Don't retry permission errors
@@ -456,16 +473,21 @@ func (s *RemoteStore) WatchWithResult(ctx context.Context, filter config.WatchFi
 
 	go s.watchLoop(watchCtx, client, filter, ch, errCh, doneCh)
 
+	var (
+		once     sync.Once
+		watchErr error
+	)
 	return &WatchResult{
 		Events: ch,
 		Err: func() error {
-			<-doneCh // Wait for goroutine to finish
-			select {
-			case err := <-errCh:
-				return err
-			default:
-				return nil
-			}
+			once.Do(func() {
+				<-doneCh // Wait for goroutine to finish
+				select {
+				case watchErr = <-errCh:
+				default:
+				}
+			})
+			return watchErr
 		},
 		Stop: func() {
 			cancel()
