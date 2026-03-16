@@ -188,9 +188,9 @@ func WithWatchReconnect(enabled bool, waitTime time.Duration) Option {
 }
 
 // WithKeepalive configures gRPC keepalive parameters.
-func WithKeepalive(time, timeout time.Duration) Option {
+func WithKeepalive(interval, timeout time.Duration) Option {
 	return func(o *options) {
-		o.keepaliveTime = time
+		o.keepaliveTime = interval
 		o.keepaliveTimeout = timeout
 	}
 }

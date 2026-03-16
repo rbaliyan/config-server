@@ -98,8 +98,8 @@ func (s *RemoteStore) setState(state ConnState) {
 // The context is reserved for future use.
 //
 // Note: the onStateChange callback (set via WithStateCallback) is invoked
-// outside the internal lock. The callback must not call back into this store
-// on the same goroutine to avoid deadlock.
+// while holding stateMu but not s.mu. The callback must not acquire s.mu
+// (e.g. by calling Ready()) on the same goroutine to avoid deadlock.
 func (s *RemoteStore) Connect(ctx context.Context) error {
 	if s.State() == ConnStateClosed {
 		return config.ErrStoreClosed

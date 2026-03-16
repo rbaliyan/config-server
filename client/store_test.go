@@ -235,16 +235,21 @@ func TestWatchResult(t *testing.T) {
 
 	close(doneCh)
 
+	var (
+		once     sync.Once
+		watchErr error
+	)
 	result := &WatchResult{
 		Events: ch,
 		Err: func() error {
-			<-doneCh
-			select {
-			case err := <-errCh:
-				return err
-			default:
-				return nil
-			}
+			once.Do(func() {
+				<-doneCh
+				select {
+				case watchErr = <-errCh:
+				default:
+				}
+			})
+			return watchErr
 		},
 		Stop: func() {},
 	}
