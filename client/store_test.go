@@ -276,22 +276,33 @@ func TestWatchResult_WithError(t *testing.T) {
 	errCh <- testErr
 	close(doneCh)
 
+	var (
+		once     sync.Once
+		watchErr error
+	)
 	result := &WatchResult{
 		Events: ch,
 		Err: func() error {
-			<-doneCh
-			select {
-			case err := <-errCh:
-				return err
-			default:
-				return nil
-			}
+			once.Do(func() {
+				<-doneCh
+				select {
+				case watchErr = <-errCh:
+				default:
+				}
+			})
+			return watchErr
 		},
 		Stop: func() {},
 	}
 
+	// First call should return the error.
 	if err := result.Err(); err != testErr {
-		t.Errorf("Err() = %v, want %v", err, testErr)
+		t.Errorf("Err() first call = %v, want %v", err, testErr)
+	}
+
+	// Second call must return the same error (idempotent).
+	if err := result.Err(); err != testErr {
+		t.Errorf("Err() second call = %v, want %v (must be idempotent)", err, testErr)
 	}
 }
 
@@ -499,6 +510,7 @@ func TestIsNonRetryable(t *testing.T) {
 		{config.ErrInvalidNamespace, true},
 		{config.ErrInvalidValue, true},
 		{config.ErrReadOnly, true},
+		{config.ErrStoreClosed, true},
 		{&PermissionDeniedError{}, true},
 		{config.ErrStoreNotConnected, false},
 		{errors.New("random error"), false},
@@ -508,6 +520,7 @@ func TestIsNonRetryable(t *testing.T) {
 		{fmt.Errorf("wrapped: %w", config.ErrInvalidNamespace), true},
 		{fmt.Errorf("wrapped: %w", config.ErrInvalidValue), true},
 		{fmt.Errorf("wrapped: %w", config.ErrReadOnly), true},
+		{fmt.Errorf("wrapped: %w", config.ErrStoreClosed), true},
 		{fmt.Errorf("wrapped: %w", &PermissionDeniedError{Message: "denied"}), true},
 		{fmt.Errorf("wrapped: %w", errors.New("transient")), false},
 	}

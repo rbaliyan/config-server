@@ -435,7 +435,7 @@ type WatchResult struct {
 
 	// Err returns the error that caused the watch to end, or nil if it was
 	// cancelled normally. This method blocks until the watch goroutine exits.
-	// It should only be called once; subsequent calls may return nil.
+	// Safe to call multiple times; all calls return the same error.
 	Err func() error
 
 	// Stop cancels the watch. Safe to call multiple times.
