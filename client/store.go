@@ -77,8 +77,11 @@ func NewRemoteStore(addr string, opts ...Option) (*RemoteStore, error) {
 	return s, nil
 }
 
-// Compile-time interface check
-var _ config.Store = (*RemoteStore)(nil)
+// Compile-time interface checks
+var (
+	_ config.Store          = (*RemoteStore)(nil)
+	_ config.VersionedStore = (*RemoteStore)(nil)
+)
 
 // State returns the current connection state.
 func (s *RemoteStore) State() ConnState {
@@ -310,6 +313,8 @@ func isNonRetryable(err error) bool {
 		errors.Is(err, config.ErrInvalidNamespace),
 		errors.Is(err, config.ErrInvalidValue),
 		errors.Is(err, config.ErrReadOnly),
+		errors.Is(err, config.ErrVersionNotFound),
+		errors.Is(err, config.ErrVersioningNotSupported),
 		// Store is permanently closed — retrying cannot succeed.
 		errors.Is(err, config.ErrStoreClosed):
 		return true
@@ -422,6 +427,42 @@ func (s *RemoteStore) Find(ctx context.Context, namespace string, filter config.
 		}
 
 		result = config.NewPage(results, resp.NextCursor, filter.Limit())
+		return nil
+	})
+	return result, err
+}
+
+// GetVersions retrieves version history for a configuration key.
+// Implements config.VersionedStore.
+func (s *RemoteStore) GetVersions(ctx context.Context, namespace, key string, filter config.VersionFilter) (config.VersionPage, error) {
+	var result config.VersionPage
+	err := s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		req := &configpb.GetVersionsRequest{
+			Namespace: namespace,
+			Key:       key,
+		}
+		if filter != nil {
+			req.Version = filter.Version()
+			req.Limit = int32(filter.Limit())
+			req.Cursor = filter.Cursor()
+		}
+
+		resp, err := client.GetVersions(ctx, req)
+		if err != nil {
+			return fromGRPCError(err)
+		}
+
+		versions := make([]config.Value, 0, len(resp.Entries))
+		for _, e := range resp.Entries {
+			versions = append(versions, protoToValue(e))
+		}
+
+		result = config.NewVersionPage(versions, resp.NextCursor, int(resp.Limit))
 		return nil
 	})
 	return result, err
