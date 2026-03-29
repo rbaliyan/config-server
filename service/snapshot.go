@@ -89,7 +89,7 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 func computeETag(entries []*configpb.Entry) string {
 	h := sha256.New()
 	for _, e := range entries {
-		fmt.Fprintf(h, "%s:%d\n", e.Key, e.Version)
+		_, _ = fmt.Fprintf(h, "%s:%d\n", e.Key, e.Version)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
