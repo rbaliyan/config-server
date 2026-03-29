@@ -18,6 +18,7 @@ type Service struct {
 
 	store      config.Store
 	authorizer Authorizer
+	opts       serviceOptions
 }
 
 // NewService creates a new ConfigService.
@@ -27,7 +28,9 @@ func NewService(store config.Store, opts ...Option) (*Service, error) {
 		return nil, fmt.Errorf("config-server: NewService requires a non-nil store")
 	}
 	o := &serviceOptions{
-		authorizer: DenyAll(), // Safe default
+		authorizer:         DenyAll(), // Safe default
+		maxSnapshotEntries: 10_000,
+		maxValueSize:       1 << 20, // 1 MiB
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -35,6 +38,7 @@ func NewService(store config.Store, opts ...Option) (*Service, error) {
 	return &Service{
 		store:      store,
 		authorizer: o.authorizer,
+		opts:       *o,
 	}, nil
 }
 
@@ -82,6 +86,11 @@ func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.
 func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.SetResponse, error) {
 	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
 		return nil, err
+	}
+
+	if len(req.Value) > s.opts.maxValueSize {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"value size %d exceeds maximum allowed size %d", len(req.Value), s.opts.maxValueSize)
 	}
 
 	if err := s.authorizer.Authorize(ctx, AuthRequest{
@@ -252,6 +261,13 @@ func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequ
 func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigService_WatchServer) error {
 	ctx := stream.Context()
 
+	if len(req.Namespaces) > 100 {
+		return status.Errorf(codes.InvalidArgument, "too many namespaces (max 100, got %d)", len(req.Namespaces))
+	}
+	if len(req.Prefixes) > 100 {
+		return status.Errorf(codes.InvalidArgument, "too many prefixes (max 100, got %d)", len(req.Prefixes))
+	}
+
 	// Authorize each requested namespace individually
 	if len(req.Namespaces) == 0 {
 		if err := s.authorizer.Authorize(ctx, AuthRequest{
@@ -316,6 +332,11 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 }
 
 // CheckAccess verifies the caller's access level for a namespace.
+//
+// Warning: This endpoint reveals whether a namespace exists and what permissions
+// the caller has on it. In production deployments, CheckAccess should be
+// rate-limited (e.g., via a gRPC interceptor or API gateway) to prevent
+// enumeration of namespace names and permission configurations.
 func (s *Service) CheckAccess(ctx context.Context, req *configpb.CheckAccessRequest) (*configpb.CheckAccessResponse, error) {
 	resp := &configpb.CheckAccessResponse{}
 

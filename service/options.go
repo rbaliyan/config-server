@@ -2,7 +2,9 @@ package service
 
 // serviceOptions holds configuration for the Service.
 type serviceOptions struct {
-	authorizer Authorizer
+	authorizer         Authorizer
+	maxSnapshotEntries int
+	maxValueSize       int
 }
 
 // Option configures the Service.
@@ -14,6 +16,28 @@ func WithAuthorizer(a Authorizer) Option {
 	return func(o *serviceOptions) {
 		if a != nil {
 			o.authorizer = a
+		}
+	}
+}
+
+// WithMaxSnapshotEntries sets the maximum number of entries a Snapshot call may
+// return. If the namespace contains more entries, the RPC returns ResourceExhausted.
+// Default: 10000.
+func WithMaxSnapshotEntries(n int) Option {
+	return func(o *serviceOptions) {
+		if n > 0 {
+			o.maxSnapshotEntries = n
+		}
+	}
+}
+
+// WithMaxValueSize sets the maximum allowed size in bytes for values passed to Set.
+// Requests exceeding this limit are rejected with InvalidArgument.
+// Default: 1 MiB (1 << 20).
+func WithMaxValueSize(n int) Option {
+	return func(o *serviceOptions) {
+		if n > 0 {
+			o.maxValueSize = n
 		}
 	}
 }
