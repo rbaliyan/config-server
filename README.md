@@ -11,7 +11,7 @@ A gRPC configuration server with HTTP/JSON gateway, pluggable authorization, and
 
 ## Features
 
-- **gRPC API**: Full CRUD + Watch (server-streaming) for configuration entries
+- **gRPC API**: Full CRUD + Watch (server-streaming) + Version History for configuration entries
 - **HTTP/JSON Gateway**: RESTful API via gRPC-Gateway, auto-generated from proto definitions
 - **Pluggable Authorization**: Namespace + operation-level access control via `Authorizer` interface
 - **Go Client (`RemoteStore`)**: Implements `config.Store` — use with `config.Manager` like any local store
@@ -81,7 +81,7 @@ cfg := mgr.Namespace("production")
 val, _ := cfg.Get(ctx, "app/timeout")
 ```
 
-The `RemoteStore` implements `config.Store`, so it works seamlessly with `config.Manager`, `live.Ref[T]`, `bind.Binder`, and all other config library features.
+The `RemoteStore` implements `config.Store` and `config.VersionedStore`, so it works seamlessly with `config.Manager`, `live.Ref[T]`, `bind.Binder`, and all other config library features — including version history retrieval.
 
 ## API
 
@@ -93,6 +93,7 @@ The `RemoteStore` implements `config.Store`, so it works seamlessly with `config
 | `Set(namespace, key, value, codec, write_mode)` | Create or update an entry |
 | `Delete(namespace, key)` | Remove an entry |
 | `List(namespace, prefix, limit, cursor)` | List entries with pagination |
+| `GetVersions(namespace, key, version, limit, cursor)` | Retrieve version history for a key |
 | `Watch(namespaces, prefixes)` | Stream real-time changes (server-streaming) |
 | `CheckAccess(namespace)` | Check read/write access for a namespace |
 
@@ -106,6 +107,7 @@ The gateway exposes a RESTful API auto-mapped from the proto definitions:
 | `POST` | Set | `/v1/namespaces/{namespace}/keys/{key}` |
 | `DELETE` | Delete | `/v1/namespaces/{namespace}/keys/{key}` |
 | `GET` | List | `/v1/namespaces/{namespace}/keys?prefix=app/&limit=100&cursor=...` |
+| `GET` | GetVersions | `/v1/namespaces/{namespace}/keys/{key}/versions?version=3&limit=10&cursor=...` |
 | `GET` | CheckAccess | `/v1/namespaces/{namespace}/access` |
 | `GET` | Watch (SSE) | `/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/` |
 
@@ -125,6 +127,12 @@ curl 'http://localhost:8080/v1/namespaces/production/keys?prefix=app/'
 
 # Delete
 curl -X DELETE http://localhost:8080/v1/namespaces/production/keys/app/timeout
+
+# Get version history
+curl 'http://localhost:8080/v1/namespaces/production/keys/app/timeout/versions?limit=10'
+
+# Get a specific version
+curl 'http://localhost:8080/v1/namespaces/production/keys/app/timeout/versions?version=2'
 
 # Check access
 curl http://localhost:8080/v1/namespaces/production/access
