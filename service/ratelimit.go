@@ -17,6 +17,13 @@ type RateLimiter interface {
 	Allow(clientID string) bool
 }
 
+// ClientIdentifier extracts a client identity from a request context.
+// Rate limiters that implement this interface will have their ClientID method
+// called by the interceptors instead of defaulting to the peer address.
+type ClientIdentifier interface {
+	ClientID(ctx context.Context) string
+}
+
 // RateLimitOption configures the TokenBucketLimiter.
 type RateLimitOption func(*rateLimitOptions)
 
@@ -27,31 +34,39 @@ type rateLimitOptions struct {
 	clientIdentifier func(ctx context.Context) string
 }
 
-// WithRate sets the token refill rate (tokens per second).
+// WithRate sets the token refill rate (tokens per second). Values <= 0 are ignored.
 func WithRate(r float64) RateLimitOption {
 	return func(o *rateLimitOptions) {
-		o.rate = r
+		if r > 0 {
+			o.rate = r
+		}
 	}
 }
 
-// WithBurst sets the maximum burst size.
+// WithBurst sets the maximum burst size. Values <= 0 are ignored.
 func WithBurst(b int) RateLimitOption {
 	return func(o *rateLimitOptions) {
-		o.burst = b
+		if b > 0 {
+			o.burst = b
+		}
 	}
 }
 
-// WithCleanupInterval sets the interval for removing stale client entries.
+// WithCleanupInterval sets the interval for removing stale client entries. Values <= 0 are ignored.
 func WithCleanupInterval(d time.Duration) RateLimitOption {
 	return func(o *rateLimitOptions) {
-		o.cleanupInterval = d
+		if d > 0 {
+			o.cleanupInterval = d
+		}
 	}
 }
 
-// WithClientIdentifier sets a function to extract client identity from context.
+// WithClientIdentifier sets a function to extract client identity from context. Nil functions are ignored.
 func WithClientIdentifier(fn func(ctx context.Context) string) RateLimitOption {
 	return func(o *rateLimitOptions) {
-		o.clientIdentifier = fn
+		if fn != nil {
+			o.clientIdentifier = fn
+		}
 	}
 }
 
@@ -70,7 +85,14 @@ type TokenBucketLimiter struct {
 	clientIdentifier func(ctx context.Context) string
 	stopCleanup      chan struct{}
 	cleanupDone      chan struct{}
+	closeOnce        sync.Once
 }
+
+// Compile-time interface checks.
+var (
+	_ RateLimiter      = (*TokenBucketLimiter)(nil)
+	_ ClientIdentifier = (*TokenBucketLimiter)(nil)
+)
 
 // NewTokenBucketLimiter creates a new per-client token bucket rate limiter.
 func NewTokenBucketLimiter(opts ...RateLimitOption) *TokenBucketLimiter {
@@ -124,9 +146,11 @@ func (l *TokenBucketLimiter) ClientID(ctx context.Context) string {
 	return l.clientIdentifier(ctx)
 }
 
-// Close stops the background cleanup goroutine.
+// Close stops the background cleanup goroutine. Safe to call multiple times.
 func (l *TokenBucketLimiter) Close() {
-	close(l.stopCleanup)
+	l.closeOnce.Do(func() {
+		close(l.stopCleanup)
+	})
 	<-l.cleanupDone
 }
 
@@ -182,10 +206,7 @@ func StreamRateLimitInterceptor(limiter RateLimiter) grpc.StreamServerIntercepto
 // extractClientID gets the client ID using the limiter's ClientID method if available,
 // otherwise falls back to the peer address.
 func extractClientID(ctx context.Context, limiter RateLimiter) string {
-	type clientIdentifier interface {
-		ClientID(ctx context.Context) string
-	}
-	if ci, ok := limiter.(clientIdentifier); ok {
+	if ci, ok := limiter.(ClientIdentifier); ok {
 		return ci.ClientID(ctx)
 	}
 	if p, ok := peer.FromContext(ctx); ok {

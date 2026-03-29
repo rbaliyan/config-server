@@ -163,6 +163,20 @@ func TestTokenBucketLimiter_CloseStopsCleanup(t *testing.T) {
 	}
 }
 
+func TestTokenBucketLimiter_DoubleClose(t *testing.T) {
+	limiter := NewTokenBucketLimiter(
+		WithRate(10),
+		WithBurst(10),
+		WithCleanupInterval(time.Hour),
+	)
+
+	// First close should succeed
+	limiter.Close()
+
+	// Second close should not panic
+	limiter.Close()
+}
+
 func TestRateLimitInterceptor_AllowsRequest(t *testing.T) {
 	limiter := &mockRateLimiter{allow: true}
 	interceptor := RateLimitInterceptor(limiter)
