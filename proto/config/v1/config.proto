@@ -38,6 +38,13 @@ service ConfigService {
     };
   }
 
+  // GetVersions retrieves version history for a configuration key.
+  rpc GetVersions(GetVersionsRequest) returns (GetVersionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces/{namespace}/keys/{key}/versions"
+    };
+  }
+
   // Watch streams configuration changes in real-time.
   // This is a server-streaming RPC (gRPC only, no REST equivalent).
   rpc Watch(WatchRequest) returns (stream WatchResponse);
@@ -104,6 +111,22 @@ message ListRequest {
 message ListResponse {
   repeated Entry entries = 1;
   string next_cursor = 2;     // Empty if no more results
+}
+
+// GetVersionsRequest is the request for GetVersions.
+message GetVersionsRequest {
+  string namespace = 1;
+  string key = 2;
+  int64 version = 3;       // Specific version to retrieve (0 = all versions)
+  int32 limit = 4;         // Max results (0 = server default)
+  string cursor = 5;       // Pagination cursor from previous response
+}
+
+// GetVersionsResponse is the response for GetVersions.
+message GetVersionsResponse {
+  repeated Entry entries = 1;   // Versions ordered by version descending
+  string next_cursor = 2;       // Empty if no more results
+  int32 limit = 3;              // Actual limit used
 }
 
 // WatchRequest is the request for Watch.

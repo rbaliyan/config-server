@@ -197,6 +197,57 @@ func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configp
 	}, nil
 }
 
+// GetVersions retrieves version history for a configuration key.
+func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequest) (*configpb.GetVersionsResponse, error) {
+	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Namespace: req.Namespace,
+		Key:       req.Key,
+		Operation: OperationRead,
+	}); err != nil {
+		return nil, err
+	}
+
+	vs, ok := s.store.(config.VersionedStore)
+	if !ok {
+		return nil, toGRPCError(config.ErrVersioningNotSupported)
+	}
+
+	fb := config.NewVersionFilter()
+	if req.Version > 0 {
+		fb = fb.WithVersion(req.Version)
+	}
+	if req.Limit > 0 {
+		fb = fb.WithLimit(int(req.Limit))
+	}
+	if req.Cursor != "" {
+		fb = fb.WithCursor(req.Cursor)
+	}
+
+	page, err := vs.GetVersions(ctx, req.Namespace, req.Key, fb.Build())
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	entries := make([]*configpb.Entry, 0, len(page.Versions()))
+	for _, val := range page.Versions() {
+		entry, err := valueToProto(req.Namespace, req.Key, val)
+		if err != nil {
+			return nil, toGRPCError(err)
+		}
+		entries = append(entries, entry)
+	}
+
+	return &configpb.GetVersionsResponse{
+		Entries:    entries,
+		NextCursor: page.NextCursor(),
+		Limit:      int32(page.Limit()),
+	}, nil
+}
+
 // Watch streams configuration changes in real-time.
 func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigService_WatchServer) error {
 	ctx := stream.Context()

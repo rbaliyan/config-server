@@ -15,7 +15,7 @@ config-server/
 ├── proto/config/v1/     # Protobuf definitions and generated code
 │   └── config.proto     # Service, messages, enums
 ├── service/             # gRPC service implementation
-│   ├── service.go       # ConfigService (Get, Set, Delete, List, Watch, CheckAccess)
+│   ├── service.go       # ConfigService (Get, Set, Delete, List, GetVersions, Watch, CheckAccess)
 │   ├── authorizer.go    # Authorizer interface, AllowAll, DenyAll
 │   ├── errors.go        # config error → gRPC status mapping
 │   ├── interceptors.go  # Logging and recovery interceptors
@@ -36,7 +36,7 @@ config-server/
 ### Key Design Decisions
 
 - **Authorizer interface**: Separates authentication (interceptors) from authorization (Authorizer). Default is DenyAll for safety.
-- **RemoteStore implements config.Store**: Transparent to callers — works with Manager, live.Ref, bind.Binder.
+- **RemoteStore implements config.Store and config.VersionedStore**: Transparent to callers — works with Manager, live.Ref, bind.Binder. Versioning support is proxied to the server; if the server's store doesn't support versioning, `ErrVersioningNotSupported` is returned.
 - **Retry with circuit breaker**: Exponential backoff with jitter, per-call timeout support, non-retryable error classification.
 - **Watch reconnection**: Auto-reconnects on network errors, resets backoff after successful stream connection, max consecutive errors limit.
 - **WatchResult**: Extended watch API with error access and stop control, alongside standard Watch() for config.Store compatibility.
@@ -49,6 +49,7 @@ config-server/
 | POST | `/v1/namespaces/{namespace}/keys/{key}` | Set |
 | DELETE | `/v1/namespaces/{namespace}/keys/{key}` | Delete |
 | GET | `/v1/namespaces/{namespace}/keys` | List |
+| GET | `/v1/namespaces/{namespace}/keys/{key}/versions` | GetVersions |
 | GET | `/v1/namespaces/{namespace}/access` | CheckAccess |
 | GET | `/v1/watch?namespaces=...&prefixes=...` | Watch (SSE) |
 
@@ -82,6 +83,8 @@ Tests use:
 | `ErrReadOnly` | `FailedPrecondition` |
 | `ErrStoreClosed` | `Unavailable` |
 | `ErrWatchNotSupported` | `Unimplemented` |
+| `ErrVersionNotFound` | `NotFound` |
+| `ErrVersioningNotSupported` | `Unimplemented` |
 
 ## Dependencies
 

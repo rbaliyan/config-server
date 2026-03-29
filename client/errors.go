@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/rbaliyan/config"
 	"google.golang.org/grpc/codes"
@@ -55,6 +56,9 @@ func fromGRPCError(err error) error {
 		return nil
 
 	case codes.NotFound:
+		if strings.Contains(st.Message(), "version not found") {
+			return config.ErrVersionNotFound
+		}
 		return config.ErrNotFound
 
 	case codes.AlreadyExists:
@@ -70,6 +74,9 @@ func fromGRPCError(err error) error {
 		return config.ErrStoreNotConnected
 
 	case codes.Unimplemented:
+		if strings.Contains(st.Message(), "versioning") {
+			return config.ErrVersioningNotSupported
+		}
 		return config.ErrWatchNotSupported
 
 	case codes.PermissionDenied, codes.Unauthenticated:

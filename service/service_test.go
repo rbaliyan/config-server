@@ -1267,6 +1267,229 @@ func TestService_Watch_PartialNamespaceDenied(t *testing.T) {
 	}
 }
 
+func TestService_GetVersions(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	// Create 3 versions
+	store.Set(ctx, "test", "key1", config.NewValue("v1"))
+	store.Set(ctx, "test", "key1", config.NewValue("v2"))
+	store.Set(ctx, "test", "key1", config.NewValue("v3"))
+
+	// List all versions
+	resp, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(resp.Entries))
+	}
+
+	// Should be newest first
+	if resp.Entries[0].Version != 3 {
+		t.Errorf("first entry version = %d, want 3", resp.Entries[0].Version)
+	}
+	if resp.Entries[2].Version != 1 {
+		t.Errorf("last entry version = %d, want 1", resp.Entries[2].Version)
+	}
+}
+
+func TestService_GetVersions_SpecificVersion(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	store.Set(ctx, "test", "key1", config.NewValue("v1"))
+	store.Set(ctx, "test", "key1", config.NewValue("v2"))
+
+	resp, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key1",
+		Version:   1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	if resp.Entries[0].Version != 1 {
+		t.Errorf("version = %d, want 1", resp.Entries[0].Version)
+	}
+}
+
+func TestService_GetVersions_NotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent key")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.NotFound {
+		t.Errorf("expected NotFound, got: %v", st.Code())
+	}
+}
+
+func TestService_GetVersions_VersionNotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	store.Set(ctx, "test", "key1", config.NewValue("v1"))
+
+	_, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key1",
+		Version:   99,
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent version")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.NotFound {
+		t.Errorf("expected NotFound, got: %v", st.Code())
+	}
+}
+
+func TestService_GetVersions_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	// Empty namespace
+	_, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{Key: "key"})
+	if err == nil {
+		t.Fatal("expected error for empty namespace")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+
+	// Empty key
+	_, err = svc.GetVersions(ctx, &configpb.GetVersionsRequest{Namespace: "ns"})
+	if err == nil {
+		t.Fatal("expected error for empty key")
+	}
+	st, _ = status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestService_GetVersions_Pagination(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	// Create 5 versions
+	for i := 1; i <= 5; i++ {
+		store.Set(ctx, "test", "key1", config.NewValue(i))
+	}
+
+	// Page 1
+	resp1, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key1",
+		Limit:     2,
+	})
+	if err != nil {
+		t.Fatalf("page 1 error: %v", err)
+	}
+	if len(resp1.Entries) != 2 {
+		t.Fatalf("page 1: expected 2 entries, got %d", len(resp1.Entries))
+	}
+	if resp1.NextCursor == "" {
+		t.Fatal("expected non-empty cursor after page 1")
+	}
+
+	// Page 2
+	resp2, err := svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key1",
+		Limit:     2,
+		Cursor:    resp1.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("page 2 error: %v", err)
+	}
+	if len(resp2.Entries) != 2 {
+		t.Fatalf("page 2: expected 2 entries, got %d", len(resp2.Entries))
+	}
+}
+
+func TestService_GetVersions_NotSupported(t *testing.T) {
+	ctx := context.Background()
+
+	// Use a store that does NOT implement VersionedStore.
+	store := &unversionedStore{}
+	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	_, err = svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "ns",
+		Key:       "key",
+	})
+	if err == nil {
+		t.Fatal("expected error for unversioned store")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Unimplemented {
+		t.Errorf("expected Unimplemented, got: %v", st.Code())
+	}
+}
+
+func TestService_GetVersions_Denied(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewStore()
+	_ = store.Connect(ctx)
+	defer store.Close(ctx)
+
+	// Service with DenyAll (default)
+	svc, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	_, err = svc.GetVersions(ctx, &configpb.GetVersionsRequest{
+		Namespace: "test",
+		Key:       "key",
+	})
+	if err == nil {
+		t.Fatal("expected permission denied")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	}
+}
+
+// unversionedStore is a minimal config.Store that does NOT implement
+// config.VersionedStore, used to test the Unimplemented error path.
+type unversionedStore struct{}
+
+func (s *unversionedStore) Connect(context.Context) error                            { return nil }
+func (s *unversionedStore) Close(context.Context) error                              { return nil }
+func (s *unversionedStore) Get(context.Context, string, string) (config.Value, error) { return nil, nil }
+func (s *unversionedStore) Set(context.Context, string, string, config.Value) (config.Value, error) {
+	return nil, nil
+}
+func (s *unversionedStore) Delete(context.Context, string, string) error { return nil }
+func (s *unversionedStore) Find(context.Context, string, config.Filter) (config.Page, error) {
+	return nil, nil
+}
+func (s *unversionedStore) Watch(context.Context, config.WatchFilter) (<-chan config.ChangeEvent, error) {
+	return nil, nil
+}
+
 type namespaceAuthorizer struct {
 	allowed map[string]bool
 }

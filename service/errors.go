@@ -36,6 +36,12 @@ func toGRPCError(err error) error {
 		return status.Errorf(codes.InvalidArgument, "invalid key: %s - %s", invalidKey.Key, invalidKey.Reason)
 	}
 
+	var versionNotFound *config.VersionNotFoundError
+	if errors.As(err, &versionNotFound) {
+		return status.Errorf(codes.NotFound, "version not found: %s/%s version %d",
+			versionNotFound.Namespace, versionNotFound.Key, versionNotFound.Version)
+	}
+
 	var storeErr *config.StoreError
 	if errors.As(err, &storeErr) {
 		return status.Errorf(codes.Internal, "store error: %s", storeErr.Error())
@@ -62,6 +68,10 @@ func toGRPCError(err error) error {
 	case errors.Is(err, config.ErrStoreClosed):
 		return status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, config.ErrWatchNotSupported):
+		return status.Error(codes.Unimplemented, err.Error())
+	case errors.Is(err, config.ErrVersionNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, config.ErrVersioningNotSupported):
 		return status.Error(codes.Unimplemented, err.Error())
 	case errors.Is(err, config.ErrCodecNotFound):
 		return status.Error(codes.InvalidArgument, err.Error())

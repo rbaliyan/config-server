@@ -63,6 +63,13 @@ func TestRemoteStore_NotConnected(t *testing.T) {
 			t.Errorf("Watch() error = %v, want ErrStoreNotConnected", err)
 		}
 	})
+
+	t.Run("GetVersions", func(t *testing.T) {
+		_, err := store.GetVersions(ctx, "ns", "key", config.NewVersionFilter().Build())
+		if !errors.Is(err, config.ErrStoreNotConnected) {
+			t.Errorf("GetVersions() error = %v, want ErrStoreNotConnected", err)
+		}
+	})
 }
 
 func TestRemoteStore_CloseWithoutConnect(t *testing.T) {
@@ -548,11 +555,13 @@ func TestFromGRPCError_AllCodes(t *testing.T) {
 	}{
 		{"OK", codes.OK, "ok", nil, nil},
 		{"NotFound", codes.NotFound, "not found", config.ErrNotFound, nil},
+		{"NotFound_Version", codes.NotFound, "version not found: ns/key version 3", config.ErrVersionNotFound, nil},
 		{"AlreadyExists", codes.AlreadyExists, "exists", config.ErrKeyExists, nil},
 		{"InvalidArgument", codes.InvalidArgument, "bad arg", config.ErrInvalidValue, nil},
 		{"FailedPrecondition", codes.FailedPrecondition, "read only", config.ErrReadOnly, nil},
 		{"Unavailable", codes.Unavailable, "down", config.ErrStoreNotConnected, nil},
 		{"Unimplemented", codes.Unimplemented, "nope", config.ErrWatchNotSupported, nil},
+		{"Unimplemented_Versioning", codes.Unimplemented, "config: versioning not supported", config.ErrVersioningNotSupported, nil},
 		{"Canceled", codes.Canceled, "canceled", context.Canceled, nil},
 		{"DeadlineExceeded", codes.DeadlineExceeded, "timeout", context.DeadlineExceeded, nil},
 		{"OutOfRange", codes.OutOfRange, "out of range", config.ErrInvalidValue, nil},
@@ -1129,6 +1138,10 @@ func (m *mockConfigClient) Watch(ctx context.Context, in *configpb.WatchRequest,
 	}
 	// Return a stream that immediately returns EOF
 	return &mockWatchStream{ctx: ctx}, nil
+}
+
+func (m *mockConfigClient) GetVersions(ctx context.Context, in *configpb.GetVersionsRequest, opts ...grpc.CallOption) (*configpb.GetVersionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
 func (m *mockConfigClient) CheckAccess(ctx context.Context, in *configpb.CheckAccessRequest, opts ...grpc.CallOption) (*configpb.CheckAccessResponse, error) {

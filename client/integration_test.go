@@ -442,3 +442,80 @@ func TestIntegration_VersionIncrement(t *testing.T) {
 		t.Errorf("Version after second set = %d, want 2", v2.Metadata().Version())
 	}
 }
+
+func TestIntegration_GetVersions(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+
+	// Create 3 versions
+	for i := 1; i <= 3; i++ {
+		_, err := store.Set(ctx, "ver-ns", "versioned-key", config.NewValue(fmt.Sprintf("v%d", i)))
+		if err != nil {
+			t.Fatalf("Set #%d failed: %v", i, err)
+		}
+	}
+
+	// List all versions via RemoteStore
+	page, err := store.GetVersions(ctx, "ver-ns", "versioned-key", config.NewVersionFilter().Build())
+	if err != nil {
+		t.Fatalf("GetVersions failed: %v", err)
+	}
+
+	versions := page.Versions()
+	if len(versions) != 3 {
+		t.Fatalf("expected 3 versions, got %d", len(versions))
+	}
+
+	// Newest first
+	if versions[0].Metadata().Version() != 3 {
+		t.Errorf("first version = %d, want 3", versions[0].Metadata().Version())
+	}
+	if versions[2].Metadata().Version() != 1 {
+		t.Errorf("last version = %d, want 1", versions[2].Metadata().Version())
+	}
+
+	// Get specific version
+	page2, err := store.GetVersions(ctx, "ver-ns", "versioned-key", config.NewVersionFilter().WithVersion(2).Build())
+	if err != nil {
+		t.Fatalf("GetVersions(version=2) failed: %v", err)
+	}
+	if len(page2.Versions()) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(page2.Versions()))
+	}
+	if page2.Versions()[0].Metadata().Version() != 2 {
+		t.Errorf("version = %d, want 2", page2.Versions()[0].Metadata().Version())
+	}
+
+	// Version not found
+	_, err = store.GetVersions(ctx, "ver-ns", "versioned-key", config.NewVersionFilter().WithVersion(99).Build())
+	if !errors.Is(err, config.ErrVersionNotFound) {
+		t.Errorf("GetVersions(version=99) err = %v, want ErrVersionNotFound", err)
+	}
+
+	// Key not found
+	_, err = store.GetVersions(ctx, "ver-ns", "nonexistent", config.NewVersionFilter().Build())
+	if !errors.Is(err, config.ErrNotFound) {
+		t.Errorf("GetVersions(nonexistent) err = %v, want ErrNotFound", err)
+	}
+
+	// Pagination
+	page3, err := store.GetVersions(ctx, "ver-ns", "versioned-key", config.NewVersionFilter().WithLimit(2).Build())
+	if err != nil {
+		t.Fatalf("GetVersions(limit=2) failed: %v", err)
+	}
+	if len(page3.Versions()) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(page3.Versions()))
+	}
+	if page3.NextCursor() == "" {
+		t.Fatal("expected non-empty cursor")
+	}
+
+	page4, err := store.GetVersions(ctx, "ver-ns", "versioned-key",
+		config.NewVersionFilter().WithLimit(2).WithCursor(page3.NextCursor()).Build())
+	if err != nil {
+		t.Fatalf("GetVersions page 2 failed: %v", err)
+	}
+	if len(page4.Versions()) != 1 {
+		t.Fatalf("expected 1 version on page 2, got %d", len(page4.Versions()))
+	}
+}
