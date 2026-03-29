@@ -83,7 +83,7 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 		}
 
 		// Guard against unbounded growth that could exhaust server memory.
-		if len(all) > s.opts.maxSnapshotEntries {
+		if len(all) >= s.opts.maxSnapshotEntries {
 			return nil, status.Errorf(codes.ResourceExhausted,
 				"snapshot exceeds maximum entry count (%d)", s.opts.maxSnapshotEntries)
 		}

@@ -5,6 +5,7 @@ type serviceOptions struct {
 	authorizer         Authorizer
 	maxSnapshotEntries int
 	maxValueSize       int
+	maxWatchFilters    int
 }
 
 // Option configures the Service.
@@ -27,6 +28,17 @@ func WithMaxSnapshotEntries(n int) Option {
 	return func(o *serviceOptions) {
 		if n > 0 {
 			o.maxSnapshotEntries = n
+		}
+	}
+}
+
+// WithMaxWatchFilters sets the maximum number of namespaces and prefixes allowed
+// in a single Watch request. Requests exceeding this limit are rejected with
+// InvalidArgument. Default: 100.
+func WithMaxWatchFilters(n int) Option {
+	return func(o *serviceOptions) {
+		if n > 0 {
+			o.maxWatchFilters = n
 		}
 	}
 }

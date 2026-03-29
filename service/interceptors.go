@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"runtime/debug"
 
@@ -50,7 +49,7 @@ func RecoveryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 			if r := recover(); r != nil {
 				logger.Error("panic recovered",
 					"method", info.FullMethod,
-					"panic", fmt.Sprintf("%T", r),
+					"panic", r,
 					"stack", string(debug.Stack()))
 				err = status.Errorf(codes.Internal, "internal error")
 			}
@@ -66,7 +65,7 @@ func StreamRecoveryInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor
 			if r := recover(); r != nil {
 				logger.Error("panic recovered",
 					"method", info.FullMethod,
-					"panic", fmt.Sprintf("%T", r),
+					"panic", r,
 					"stack", string(debug.Stack()))
 				err = status.Errorf(codes.Internal, "internal error")
 			}

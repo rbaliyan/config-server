@@ -31,6 +31,7 @@ func NewService(store config.Store, opts ...Option) (*Service, error) {
 		authorizer:         DenyAll(), // Safe default
 		maxSnapshotEntries: 10_000,
 		maxValueSize:       1 << 20, // 1 MiB
+		maxWatchFilters:    100,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -261,11 +262,11 @@ func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequ
 func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigService_WatchServer) error {
 	ctx := stream.Context()
 
-	if len(req.Namespaces) > 100 {
-		return status.Errorf(codes.InvalidArgument, "too many namespaces (max 100, got %d)", len(req.Namespaces))
+	if len(req.Namespaces) > s.opts.maxWatchFilters {
+		return status.Errorf(codes.InvalidArgument, "too many namespaces (max %d, got %d)", s.opts.maxWatchFilters, len(req.Namespaces))
 	}
-	if len(req.Prefixes) > 100 {
-		return status.Errorf(codes.InvalidArgument, "too many prefixes (max 100, got %d)", len(req.Prefixes))
+	if len(req.Prefixes) > s.opts.maxWatchFilters {
+		return status.Errorf(codes.InvalidArgument, "too many prefixes (max %d, got %d)", s.opts.maxWatchFilters, len(req.Prefixes))
 	}
 
 	// Authorize each requested namespace individually
