@@ -186,6 +186,11 @@ func writeStreamPreamble(sw *sseWriter) error {
 // from client.Watch(); server-side errors (including auth denial) only surface
 // on the first Recv(). So the remote handler also commits SSE headers before
 // it can detect authorization failures — both paths share this tradeoff.
+//
+// Security note: HTTP status-based security controls (e.g., WAF rules that
+// block on 401/403, or monitoring that alerts on error rates) should account
+// for the fact that auth failures on SSE streams produce a 200 status with an
+// error event payload rather than a 4xx HTTP status code.
 func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)

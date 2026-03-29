@@ -28,6 +28,11 @@ func (s *Service) Snapshot(ctx context.Context, req *configpb.SnapshotRequest) (
 
 	entries, err := s.collectAllEntries(ctx, req.Namespace)
 	if err != nil {
+		// collectAllEntries may return gRPC status errors (e.g., ResourceExhausted)
+		// directly; pass them through without double-wrapping.
+		if _, ok := status.FromError(err); ok {
+			return nil, err
+		}
 		return nil, toGRPCError(err)
 	}
 
@@ -63,7 +68,8 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 			return nil, err
 		}
 
-		for key, val := range page.Results() {
+		results := page.Results()
+		for key, val := range results {
 			entry, err := valueToProto(namespace, key, val)
 			if err != nil {
 				return nil, err
@@ -71,9 +77,17 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 			all = append(all, entry)
 		}
 
-		if len(page.Results()) < limit {
+		// Stop if this is the last page: fewer results than requested or no next cursor.
+		if len(results) < limit || page.NextCursor() == "" {
 			break
 		}
+
+		// Guard against unbounded growth that could exhaust server memory.
+		if len(all) >= s.opts.maxSnapshotEntries {
+			return nil, status.Errorf(codes.ResourceExhausted,
+				"snapshot exceeds maximum entry count (%d)", s.opts.maxSnapshotEntries)
+		}
+
 		cursor = page.NextCursor()
 	}
 

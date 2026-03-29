@@ -44,7 +44,7 @@ func toGRPCError(err error) error {
 
 	var storeErr *config.StoreError
 	if errors.As(err, &storeErr) {
-		return status.Errorf(codes.Internal, "store error: %s", storeErr.Error())
+		return status.Error(codes.Internal, "internal store error")
 	}
 
 	// Check sentinel errors
@@ -76,6 +76,6 @@ func toGRPCError(err error) error {
 	case errors.Is(err, config.ErrCodecNotFound):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:
-		return status.Errorf(codes.Internal, "internal error: %v", err)
+		return status.Error(codes.Internal, "internal error")
 	}
 }

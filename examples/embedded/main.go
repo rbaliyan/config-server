@@ -50,11 +50,17 @@ func main() {
 		log.Fatal("failed to create config service:", err)
 	}
 
-	// Create gRPC server with auth interceptor
+	// Create gRPC server with auth interceptors.
+	// WARNING: Auth must cover both unary and stream interceptors. Without
+	// a stream interceptor, streaming RPCs (e.g., Watch) bypass authentication.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			authInterceptor,
 			service.LoggingInterceptor(logger),
+		),
+		grpc.ChainStreamInterceptor(
+			streamAuthInterceptor,
+			service.StreamLoggingInterceptor(logger),
 		),
 	)
 
@@ -95,6 +101,34 @@ func authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, h
 	// Add role to context for authorizer
 	ctx = context.WithValue(ctx, roleKey{}, roles[0])
 	return handler(ctx, req)
+}
+
+// streamAuthInterceptor extracts the role from metadata for streaming RPCs.
+func streamAuthInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	ctx := ss.Context()
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	roles := md.Get("x-role")
+	if len(roles) == 0 {
+		return status.Error(codes.Unauthenticated, "missing role")
+	}
+
+	ctx = context.WithValue(ctx, roleKey{}, roles[0])
+	wrapped := &wrappedStream{ServerStream: ss, ctx: ctx}
+	return handler(srv, wrapped)
+}
+
+// wrappedStream wraps a grpc.ServerStream to override the context.
+type wrappedStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *wrappedStream) Context() context.Context {
+	return w.ctx
 }
 
 type roleKey struct{}
