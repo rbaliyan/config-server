@@ -468,6 +468,70 @@ func (s *RemoteStore) GetVersions(ctx context.Context, namespace, key string, fi
 	return result, err
 }
 
+// SnapshotResult contains the result of a Snapshot call.
+type SnapshotResult struct {
+	// Entries contains all configuration values in the namespace.
+	Entries map[string]config.Value
+
+	// ETag is an opaque version identifier for caching.
+	ETag string
+
+	// NotModified is true if the provided ETag matched (Entries will be empty).
+	NotModified bool
+}
+
+// SnapshotOption configures a Snapshot call.
+type SnapshotOption func(*snapshotOptions)
+
+type snapshotOptions struct {
+	ifNoneMatch string
+}
+
+// WithIfNoneMatch sets the ETag from a previous snapshot for conditional fetching.
+func WithIfNoneMatch(etag string) SnapshotOption {
+	return func(o *snapshotOptions) {
+		o.ifNoneMatch = etag
+	}
+}
+
+// Snapshot returns a point-in-time export of all entries in a namespace.
+// Use WithIfNoneMatch to enable ETag-based caching.
+func (s *RemoteStore) Snapshot(ctx context.Context, namespace string, opts ...SnapshotOption) (*SnapshotResult, error) {
+	o := &snapshotOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	var result *SnapshotResult
+	err := s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Snapshot(ctx, &configpb.SnapshotRequest{
+			Namespace:   namespace,
+			IfNoneMatch: o.ifNoneMatch,
+		})
+		if err != nil {
+			return fromGRPCError(err)
+		}
+
+		entries := make(map[string]config.Value, len(resp.Entries))
+		for _, e := range resp.Entries {
+			entries[e.Key] = protoToValue(e)
+		}
+
+		result = &SnapshotResult{
+			Entries:     entries,
+			ETag:        resp.Etag,
+			NotModified: resp.NotModified,
+		}
+		return nil
+	})
+	return result, err
+}
+
 // WatchResult wraps a change event channel with error reporting and control.
 type WatchResult struct {
 	// Events receives configuration change events.

@@ -1144,6 +1144,10 @@ func (m *mockConfigClient) GetVersions(ctx context.Context, in *configpb.GetVers
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+func (m *mockConfigClient) Snapshot(ctx context.Context, in *configpb.SnapshotRequest, opts ...grpc.CallOption) (*configpb.SnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func (m *mockConfigClient) CheckAccess(ctx context.Context, in *configpb.CheckAccessRequest, opts ...grpc.CallOption) (*configpb.CheckAccessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }

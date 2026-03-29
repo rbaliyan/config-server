@@ -45,6 +45,13 @@ service ConfigService {
     };
   }
 
+  // Snapshot returns a point-in-time export of all entries in a namespace.
+  rpc Snapshot(SnapshotRequest) returns (SnapshotResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces/{namespace}/snapshot"
+    };
+  }
+
   // Watch streams configuration changes in real-time.
   // This is a server-streaming RPC (gRPC only, no REST equivalent).
   rpc Watch(WatchRequest) returns (stream WatchResponse);
@@ -127,6 +134,19 @@ message GetVersionsResponse {
   repeated Entry entries = 1;   // Versions ordered by version descending
   string next_cursor = 2;       // Empty if no more results
   int32 limit = 3;              // Actual limit used
+}
+
+// SnapshotRequest is the request for Snapshot.
+message SnapshotRequest {
+  string namespace = 1;
+  string if_none_match = 2;    // ETag from previous snapshot (empty = always return)
+}
+
+// SnapshotResponse is the response for Snapshot.
+message SnapshotResponse {
+  repeated Entry entries = 1;
+  string etag = 2;              // Opaque version identifier for caching
+  bool not_modified = 3;        // True if if_none_match matched (entries will be empty)
 }
 
 // WatchRequest is the request for Watch.
