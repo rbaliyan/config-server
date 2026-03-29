@@ -24,6 +24,7 @@ const (
 	ConfigService_Delete_FullMethodName      = "/config.v1.ConfigService/Delete"
 	ConfigService_List_FullMethodName        = "/config.v1.ConfigService/List"
 	ConfigService_GetVersions_FullMethodName = "/config.v1.ConfigService/GetVersions"
+	ConfigService_Snapshot_FullMethodName    = "/config.v1.ConfigService/Snapshot"
 	ConfigService_Watch_FullMethodName       = "/config.v1.ConfigService/Watch"
 	ConfigService_CheckAccess_FullMethodName = "/config.v1.ConfigService/CheckAccess"
 )
@@ -44,6 +45,8 @@ type ConfigServiceClient interface {
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 	// GetVersions retrieves version history for a configuration key.
 	GetVersions(ctx context.Context, in *GetVersionsRequest, opts ...grpc.CallOption) (*GetVersionsResponse, error)
+	// Snapshot returns a point-in-time export of all entries in a namespace.
+	Snapshot(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*SnapshotResponse, error)
 	// Watch streams configuration changes in real-time.
 	// This is a server-streaming RPC (gRPC only, no REST equivalent).
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
@@ -109,6 +112,16 @@ func (c *configServiceClient) GetVersions(ctx context.Context, in *GetVersionsRe
 	return out, nil
 }
 
+func (c *configServiceClient) Snapshot(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*SnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SnapshotResponse)
+	err := c.cc.Invoke(ctx, ConfigService_Snapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *configServiceClient) Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ConfigService_ServiceDesc.Streams[0], ConfigService_Watch_FullMethodName, cOpts...)
@@ -154,6 +167,8 @@ type ConfigServiceServer interface {
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	// GetVersions retrieves version history for a configuration key.
 	GetVersions(context.Context, *GetVersionsRequest) (*GetVersionsResponse, error)
+	// Snapshot returns a point-in-time export of all entries in a namespace.
+	Snapshot(context.Context, *SnapshotRequest) (*SnapshotResponse, error)
 	// Watch streams configuration changes in real-time.
 	// This is a server-streaming RPC (gRPC only, no REST equivalent).
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
@@ -183,6 +198,9 @@ func (UnimplementedConfigServiceServer) List(context.Context, *ListRequest) (*Li
 }
 func (UnimplementedConfigServiceServer) GetVersions(context.Context, *GetVersionsRequest) (*GetVersionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVersions not implemented")
+}
+func (UnimplementedConfigServiceServer) Snapshot(context.Context, *SnapshotRequest) (*SnapshotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Snapshot not implemented")
 }
 func (UnimplementedConfigServiceServer) Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Watch not implemented")
@@ -301,6 +319,24 @@ func _ConfigService_GetVersions_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConfigService_Snapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).Snapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_Snapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).Snapshot(ctx, req.(*SnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ConfigService_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WatchRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -356,6 +392,10 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetVersions",
 			Handler:    _ConfigService_GetVersions_Handler,
+		},
+		{
+			MethodName: "Snapshot",
+			Handler:    _ConfigService_Snapshot_Handler,
 		},
 		{
 			MethodName: "CheckAccess",

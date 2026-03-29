@@ -696,6 +696,120 @@ func (x *GetVersionsResponse) GetLimit() int32 {
 	return 0
 }
 
+// SnapshotRequest is the request for Snapshot.
+type SnapshotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	IfNoneMatch   string                 `protobuf:"bytes,2,opt,name=if_none_match,json=ifNoneMatch,proto3" json:"if_none_match,omitempty"` // ETag from previous snapshot (empty = always return)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotRequest) Reset() {
+	*x = SnapshotRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotRequest) ProtoMessage() {}
+
+func (x *SnapshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotRequest.ProtoReflect.Descriptor instead.
+func (*SnapshotRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SnapshotRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *SnapshotRequest) GetIfNoneMatch() string {
+	if x != nil {
+		return x.IfNoneMatch
+	}
+	return ""
+}
+
+// SnapshotResponse is the response for Snapshot.
+type SnapshotResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	Etag          string                 `protobuf:"bytes,2,opt,name=etag,proto3" json:"etag,omitempty"`                                   // Opaque version identifier for caching
+	NotModified   bool                   `protobuf:"varint,3,opt,name=not_modified,json=notModified,proto3" json:"not_modified,omitempty"` // True if if_none_match matched (entries will be empty)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotResponse) Reset() {
+	*x = SnapshotResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotResponse) ProtoMessage() {}
+
+func (x *SnapshotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotResponse.ProtoReflect.Descriptor instead.
+func (*SnapshotResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SnapshotResponse) GetEntries() []*Entry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *SnapshotResponse) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
+func (x *SnapshotResponse) GetNotModified() bool {
+	if x != nil {
+		return x.NotModified
+	}
+	return false
+}
+
 // WatchRequest is the request for Watch.
 type WatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -707,7 +821,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_config_v1_config_proto_msgTypes[10]
+	mi := &file_config_v1_config_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -719,7 +833,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[10]
+	mi := &file_config_v1_config_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -732,7 +846,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{10}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WatchRequest) GetNamespaces() []string {
@@ -760,7 +874,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_config_v1_config_proto_msgTypes[11]
+	mi := &file_config_v1_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -772,7 +886,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[11]
+	mi := &file_config_v1_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -785,7 +899,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{11}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WatchResponse) GetType() ChangeType {
@@ -812,7 +926,7 @@ type CheckAccessRequest struct {
 
 func (x *CheckAccessRequest) Reset() {
 	*x = CheckAccessRequest{}
-	mi := &file_config_v1_config_proto_msgTypes[12]
+	mi := &file_config_v1_config_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -824,7 +938,7 @@ func (x *CheckAccessRequest) String() string {
 func (*CheckAccessRequest) ProtoMessage() {}
 
 func (x *CheckAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[12]
+	mi := &file_config_v1_config_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -837,7 +951,7 @@ func (x *CheckAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAccessRequest.ProtoReflect.Descriptor instead.
 func (*CheckAccessRequest) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{12}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CheckAccessRequest) GetNamespace() string {
@@ -859,7 +973,7 @@ type CheckAccessResponse struct {
 
 func (x *CheckAccessResponse) Reset() {
 	*x = CheckAccessResponse{}
-	mi := &file_config_v1_config_proto_msgTypes[13]
+	mi := &file_config_v1_config_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +985,7 @@ func (x *CheckAccessResponse) String() string {
 func (*CheckAccessResponse) ProtoMessage() {}
 
 func (x *CheckAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[13]
+	mi := &file_config_v1_config_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +998,7 @@ func (x *CheckAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckAccessResponse.ProtoReflect.Descriptor instead.
 func (*CheckAccessResponse) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{13}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CheckAccessResponse) GetCanRead() bool {
@@ -918,7 +1032,7 @@ type Entry struct {
 
 func (x *Entry) Reset() {
 	*x = Entry{}
-	mi := &file_config_v1_config_proto_msgTypes[14]
+	mi := &file_config_v1_config_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1044,7 @@ func (x *Entry) String() string {
 func (*Entry) ProtoMessage() {}
 
 func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[14]
+	mi := &file_config_v1_config_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1057,7 @@ func (x *Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entry.ProtoReflect.Descriptor instead.
 func (*Entry) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{14}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Entry) GetNamespace() string {
@@ -1046,7 +1160,14 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x10.config.v1.EntryR\aentries\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"J\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"S\n" +
+	"\x0fSnapshotRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\"\n" +
+	"\rif_none_match\x18\x02 \x01(\tR\vifNoneMatch\"u\n" +
+	"\x10SnapshotResponse\x12*\n" +
+	"\aentries\x18\x01 \x03(\v2\x10.config.v1.EntryR\aentries\x12\x12\n" +
+	"\x04etag\x18\x02 \x01(\tR\x04etag\x12!\n" +
+	"\fnot_modified\x18\x03 \x01(\bR\vnotModified\"J\n" +
 	"\fWatchRequest\x12\x1e\n" +
 	"\n" +
 	"namespaces\x18\x01 \x03(\tR\n" +
@@ -1080,13 +1201,14 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"ChangeType\x12\x1b\n" +
 	"\x17CHANGE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fCHANGE_TYPE_SET\x10\x01\x12\x16\n" +
-	"\x12CHANGE_TYPE_DELETE\x10\x022\xea\x05\n" +
+	"\x12CHANGE_TYPE_DELETE\x10\x022\xdc\x06\n" +
 	"\rConfigService\x12c\n" +
 	"\x03Get\x12\x15.config.v1.GetRequest\x1a\x16.config.v1.GetResponse\"-\x82\xd3\xe4\x93\x02'\x12%/v1/namespaces/{namespace}/keys/{key}\x12f\n" +
 	"\x03Set\x12\x15.config.v1.SetRequest\x1a\x16.config.v1.SetResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/v1/namespaces/{namespace}/keys/{key}\x12l\n" +
 	"\x06Delete\x12\x18.config.v1.DeleteRequest\x1a\x19.config.v1.DeleteResponse\"-\x82\xd3\xe4\x93\x02'*%/v1/namespaces/{namespace}/keys/{key}\x12`\n" +
 	"\x04List\x12\x16.config.v1.ListRequest\x1a\x17.config.v1.ListResponse\"'\x82\xd3\xe4\x93\x02!\x12\x1f/v1/namespaces/{namespace}/keys\x12\x84\x01\n" +
-	"\vGetVersions\x12\x1d.config.v1.GetVersionsRequest\x1a\x1e.config.v1.GetVersionsResponse\"6\x82\xd3\xe4\x93\x020\x12./v1/namespaces/{namespace}/keys/{key}/versions\x12<\n" +
+	"\vGetVersions\x12\x1d.config.v1.GetVersionsRequest\x1a\x1e.config.v1.GetVersionsResponse\"6\x82\xd3\xe4\x93\x020\x12./v1/namespaces/{namespace}/keys/{key}/versions\x12p\n" +
+	"\bSnapshot\x12\x1a.config.v1.SnapshotRequest\x1a\x1b.config.v1.SnapshotResponse\"+\x82\xd3\xe4\x93\x02%\x12#/v1/namespaces/{namespace}/snapshot\x12<\n" +
 	"\x05Watch\x12\x17.config.v1.WatchRequest\x1a\x18.config.v1.WatchResponse0\x01\x12w\n" +
 	"\vCheckAccess\x12\x1d.config.v1.CheckAccessRequest\x1a\x1e.config.v1.CheckAccessResponse\")\x82\xd3\xe4\x93\x02#\x12!/v1/namespaces/{namespace}/accessB<Z:github.com/rbaliyan/config-server/proto/config/v1;configpbb\x06proto3"
 
@@ -1103,7 +1225,7 @@ func file_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_config_v1_config_proto_goTypes = []any{
 	(WriteMode)(0),                // 0: config.v1.WriteMode
 	(ChangeType)(0),               // 1: config.v1.ChangeType
@@ -1117,42 +1239,47 @@ var file_config_v1_config_proto_goTypes = []any{
 	(*ListResponse)(nil),          // 9: config.v1.ListResponse
 	(*GetVersionsRequest)(nil),    // 10: config.v1.GetVersionsRequest
 	(*GetVersionsResponse)(nil),   // 11: config.v1.GetVersionsResponse
-	(*WatchRequest)(nil),          // 12: config.v1.WatchRequest
-	(*WatchResponse)(nil),         // 13: config.v1.WatchResponse
-	(*CheckAccessRequest)(nil),    // 14: config.v1.CheckAccessRequest
-	(*CheckAccessResponse)(nil),   // 15: config.v1.CheckAccessResponse
-	(*Entry)(nil),                 // 16: config.v1.Entry
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
+	(*SnapshotRequest)(nil),       // 12: config.v1.SnapshotRequest
+	(*SnapshotResponse)(nil),      // 13: config.v1.SnapshotResponse
+	(*WatchRequest)(nil),          // 14: config.v1.WatchRequest
+	(*WatchResponse)(nil),         // 15: config.v1.WatchResponse
+	(*CheckAccessRequest)(nil),    // 16: config.v1.CheckAccessRequest
+	(*CheckAccessResponse)(nil),   // 17: config.v1.CheckAccessResponse
+	(*Entry)(nil),                 // 18: config.v1.Entry
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
 }
 var file_config_v1_config_proto_depIdxs = []int32{
-	16, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
+	18, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
 	0,  // 1: config.v1.SetRequest.write_mode:type_name -> config.v1.WriteMode
-	16, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
-	16, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
-	16, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
-	1,  // 5: config.v1.WatchResponse.type:type_name -> config.v1.ChangeType
-	16, // 6: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
-	17, // 7: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
-	17, // 8: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 9: config.v1.ConfigService.Get:input_type -> config.v1.GetRequest
-	4,  // 10: config.v1.ConfigService.Set:input_type -> config.v1.SetRequest
-	6,  // 11: config.v1.ConfigService.Delete:input_type -> config.v1.DeleteRequest
-	8,  // 12: config.v1.ConfigService.List:input_type -> config.v1.ListRequest
-	10, // 13: config.v1.ConfigService.GetVersions:input_type -> config.v1.GetVersionsRequest
-	12, // 14: config.v1.ConfigService.Watch:input_type -> config.v1.WatchRequest
-	14, // 15: config.v1.ConfigService.CheckAccess:input_type -> config.v1.CheckAccessRequest
-	3,  // 16: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
-	5,  // 17: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
-	7,  // 18: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
-	9,  // 19: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
-	11, // 20: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
-	13, // 21: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
-	15, // 22: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	18, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
+	18, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
+	18, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
+	18, // 5: config.v1.SnapshotResponse.entries:type_name -> config.v1.Entry
+	1,  // 6: config.v1.WatchResponse.type:type_name -> config.v1.ChangeType
+	18, // 7: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
+	19, // 8: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
+	19, // 9: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: config.v1.ConfigService.Get:input_type -> config.v1.GetRequest
+	4,  // 11: config.v1.ConfigService.Set:input_type -> config.v1.SetRequest
+	6,  // 12: config.v1.ConfigService.Delete:input_type -> config.v1.DeleteRequest
+	8,  // 13: config.v1.ConfigService.List:input_type -> config.v1.ListRequest
+	10, // 14: config.v1.ConfigService.GetVersions:input_type -> config.v1.GetVersionsRequest
+	12, // 15: config.v1.ConfigService.Snapshot:input_type -> config.v1.SnapshotRequest
+	14, // 16: config.v1.ConfigService.Watch:input_type -> config.v1.WatchRequest
+	16, // 17: config.v1.ConfigService.CheckAccess:input_type -> config.v1.CheckAccessRequest
+	3,  // 18: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
+	5,  // 19: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
+	7,  // 20: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
+	9,  // 21: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
+	11, // 22: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
+	13, // 23: config.v1.ConfigService.Snapshot:output_type -> config.v1.SnapshotResponse
+	15, // 24: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
+	17, // 25: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
+	18, // [18:26] is the sub-list for method output_type
+	10, // [10:18] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_config_v1_config_proto_init() }
@@ -1166,7 +1293,7 @@ func file_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_v1_config_proto_rawDesc), len(file_config_v1_config_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

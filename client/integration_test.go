@@ -519,3 +519,54 @@ func TestIntegration_GetVersions(t *testing.T) {
 		t.Fatalf("expected 1 version on page 2, got %d", len(page4.Versions()))
 	}
 }
+
+func TestIntegration_Snapshot(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+
+	// Set multiple keys
+	for i := 1; i <= 3; i++ {
+		_, err := store.Set(ctx, "snap-ns", fmt.Sprintf("key%d", i), config.NewValue(i))
+		if err != nil {
+			t.Fatalf("Set key%d failed: %v", i, err)
+		}
+	}
+
+	// Get snapshot
+	result, err := store.Snapshot(ctx, "snap-ns")
+	if err != nil {
+		t.Fatalf("Snapshot failed: %v", err)
+	}
+	if len(result.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(result.Entries))
+	}
+	if result.ETag == "" {
+		t.Fatal("expected non-empty ETag")
+	}
+	if result.NotModified {
+		t.Error("expected NotModified=false on first call")
+	}
+
+	// Same ETag should return not_modified
+	result2, err := store.Snapshot(ctx, "snap-ns", WithIfNoneMatch(result.ETag))
+	if err != nil {
+		t.Fatalf("Snapshot with ETag failed: %v", err)
+	}
+	if !result2.NotModified {
+		t.Error("expected NotModified=true when ETag matches")
+	}
+
+	// Modify data, ETag should change
+	store.Set(ctx, "snap-ns", "key1", config.NewValue(999))
+
+	result3, err := store.Snapshot(ctx, "snap-ns", WithIfNoneMatch(result.ETag))
+	if err != nil {
+		t.Fatalf("Snapshot after change failed: %v", err)
+	}
+	if result3.NotModified {
+		t.Error("expected NotModified=false after data change")
+	}
+	if result3.ETag == result.ETag {
+		t.Error("expected different ETag after data change")
+	}
+}

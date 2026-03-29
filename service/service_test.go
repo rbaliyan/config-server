@@ -1472,6 +1472,104 @@ func TestService_GetVersions_Denied(t *testing.T) {
 	}
 }
 
+func TestService_Snapshot(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	store.Set(ctx, "test", "key1", config.NewValue("v1"))
+	store.Set(ctx, "test", "key2", config.NewValue("v2"))
+	store.Set(ctx, "test", "key3", config.NewValue("v3"))
+
+	resp, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{Namespace: "test"})
+	if err != nil {
+		t.Fatalf("Snapshot failed: %v", err)
+	}
+	if len(resp.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(resp.Entries))
+	}
+	if resp.Etag == "" {
+		t.Fatal("expected non-empty ETag")
+	}
+	if resp.NotModified {
+		t.Error("expected NotModified=false on first call")
+	}
+}
+
+func TestService_Snapshot_ETag(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupTestService(t)
+
+	store.Set(ctx, "test", "key1", config.NewValue("v1"))
+
+	// Get initial ETag
+	resp1, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{Namespace: "test"})
+	if err != nil {
+		t.Fatalf("Snapshot 1 failed: %v", err)
+	}
+
+	// Same ETag should return not_modified
+	resp2, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{
+		Namespace:   "test",
+		IfNoneMatch: resp1.Etag,
+	})
+	if err != nil {
+		t.Fatalf("Snapshot 2 failed: %v", err)
+	}
+	if !resp2.NotModified {
+		t.Error("expected NotModified=true when ETag matches")
+	}
+	if len(resp2.Entries) != 0 {
+		t.Errorf("expected 0 entries when not modified, got %d", len(resp2.Entries))
+	}
+
+	// Modify data, ETag should change
+	store.Set(ctx, "test", "key1", config.NewValue("v2"))
+
+	resp3, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{
+		Namespace:   "test",
+		IfNoneMatch: resp1.Etag,
+	})
+	if err != nil {
+		t.Fatalf("Snapshot 3 failed: %v", err)
+	}
+	if resp3.NotModified {
+		t.Error("expected NotModified=false after data change")
+	}
+	if resp3.Etag == resp1.Etag {
+		t.Error("expected different ETag after data change")
+	}
+}
+
+func TestService_Snapshot_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	_, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{})
+	if err == nil {
+		t.Fatal("expected error for empty namespace")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got: %v", st.Code())
+	}
+}
+
+func TestService_Snapshot_Empty(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupTestService(t)
+
+	resp, err := svc.Snapshot(ctx, &configpb.SnapshotRequest{Namespace: "empty-ns"})
+	if err != nil {
+		t.Fatalf("Snapshot failed: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(resp.Entries))
+	}
+	if resp.Etag == "" {
+		t.Fatal("expected non-empty ETag even for empty namespace")
+	}
+}
+
 // unversionedStore is a minimal config.Store that does NOT implement
 // config.VersionedStore, used to test the Unimplemented error path.
 type unversionedStore struct{}
