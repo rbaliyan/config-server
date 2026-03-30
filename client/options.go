@@ -219,7 +219,7 @@ func (o *options) buildDialOpts() []grpc.DialOption {
 		if o.tlsConfig != nil {
 			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(o.tlsConfig)))
 		} else {
-			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
+			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}))) // #nosec G402
 		}
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
