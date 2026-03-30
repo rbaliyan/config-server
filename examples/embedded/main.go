@@ -69,7 +69,7 @@ func main() {
 	// myv1.RegisterMyServiceServer(grpcServer, mySvc) // Your other services
 
 	// Start server
-	lis, err := net.Listen("tcp", ":9090")
+	lis, err := net.Listen("tcp", ":9090") // #nosec G102 -- example code
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
