@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -90,7 +91,7 @@ func (s *RemoteStore) State() ConnState {
 
 func (s *RemoteStore) setState(state ConnState) {
 	s.stateMu.Lock()
-	old := ConnState(s.state.Swap(int32(state)))
+	old := ConnState(s.state.Swap(int32(state))) // #nosec G115 -- ConnState is a small enum
 	if old != state && s.opts.onStateChange != nil {
 		s.opts.onStateChange(state)
 	}
@@ -260,7 +261,7 @@ func (s *RemoteStore) retry(ctx context.Context, fn func(ctx context.Context) er
 	for attempt := 0; attempt <= s.opts.maxRetries; attempt++ {
 		if attempt > 0 {
 			// Add jitter: 0.5x to 1.5x
-			jitter := time.Duration(float64(backoff) * (0.5 + rand.Float64()))
+			jitter := time.Duration(float64(backoff) * (0.5 + rand.Float64())) // #nosec G404 -- jitter does not require cryptographic randomness
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -414,7 +415,7 @@ func (s *RemoteStore) Find(ctx context.Context, namespace string, filter config.
 		resp, err := client.List(ctx, &configpb.ListRequest{
 			Namespace: namespace,
 			Prefix:    filter.Prefix(),
-			Limit:     int32(filter.Limit()),
+			Limit:     int32(min(filter.Limit(), math.MaxInt32)), // #nosec G115 -- clamped
 			Cursor:    filter.Cursor(),
 		})
 		if err != nil {
@@ -448,7 +449,7 @@ func (s *RemoteStore) GetVersions(ctx context.Context, namespace, key string, fi
 		}
 		if filter != nil {
 			req.Version = filter.Version()
-			req.Limit = int32(filter.Limit())
+			req.Limit = int32(min(filter.Limit(), math.MaxInt32)) // #nosec G115 -- clamped
 			req.Cursor = filter.Cursor()
 		}
 
@@ -657,7 +658,7 @@ func (s *RemoteStore) watchLoop(
 		}
 
 		// Wait before reconnecting with exponential backoff
-		jitter := time.Duration(float64(backoff) * (0.5 + rand.Float64()))
+		jitter := time.Duration(float64(backoff) * (0.5 + rand.Float64())) // #nosec G404 -- jitter does not require cryptographic randomness
 		select {
 		case <-ctx.Done():
 			return

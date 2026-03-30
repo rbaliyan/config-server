@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/rbaliyan/config"
 	"github.com/rbaliyan/config/codec"
@@ -254,7 +255,7 @@ func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequ
 	return &configpb.GetVersionsResponse{
 		Entries:    entries,
 		NextCursor: page.NextCursor(),
-		Limit:      int32(page.Limit()),
+		Limit:      int32(min(page.Limit(), math.MaxInt32)), // #nosec G115 -- clamped
 	}, nil
 }
 
@@ -374,7 +375,7 @@ func valueToProto(namespace, key string, val config.Value) (*configpb.Entry, err
 		Namespace: namespace,
 		Key:       key,
 		Codec:     val.Codec(),
-		Type:      int32(val.Type()),
+		Type:      int32(val.Type()), // #nosec G115 -- Type is a small enum
 	}
 
 	// Marshal value to bytes

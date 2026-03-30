@@ -61,7 +61,7 @@ func main() {
 	configpb.RegisterConfigServiceServer(grpcServer, configSvc)
 
 	// Start gRPC server
-	grpcLis, err := net.Listen("tcp", ":9090")
+	grpcLis, err := net.Listen("tcp", ":9090") // #nosec G102 -- example code
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
