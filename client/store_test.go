@@ -1152,6 +1152,22 @@ func (m *mockConfigClient) CheckAccess(ctx context.Context, in *configpb.CheckAc
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+func (m *mockConfigClient) SetAlias(ctx context.Context, in *configpb.SetAliasRequest, opts ...grpc.CallOption) (*configpb.SetAliasResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) DeleteAlias(ctx context.Context, in *configpb.DeleteAliasRequest, opts ...grpc.CallOption) (*configpb.DeleteAliasResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) GetAlias(ctx context.Context, in *configpb.GetAliasRequest, opts ...grpc.CallOption) (*configpb.GetAliasResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (m *mockConfigClient) ListAliases(ctx context.Context, in *configpb.ListAliasesRequest, opts ...grpc.CallOption) (*configpb.ListAliasesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),

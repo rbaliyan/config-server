@@ -80,9 +80,11 @@ func (WriteMode) EnumDescriptor() ([]byte, []int) {
 type ChangeType int32
 
 const (
-	ChangeType_CHANGE_TYPE_UNSPECIFIED ChangeType = 0
-	ChangeType_CHANGE_TYPE_SET         ChangeType = 1
-	ChangeType_CHANGE_TYPE_DELETE      ChangeType = 2
+	ChangeType_CHANGE_TYPE_UNSPECIFIED  ChangeType = 0
+	ChangeType_CHANGE_TYPE_SET          ChangeType = 1
+	ChangeType_CHANGE_TYPE_DELETE       ChangeType = 2
+	ChangeType_CHANGE_TYPE_ALIAS_SET    ChangeType = 3
+	ChangeType_CHANGE_TYPE_ALIAS_DELETE ChangeType = 4
 )
 
 // Enum value maps for ChangeType.
@@ -91,11 +93,15 @@ var (
 		0: "CHANGE_TYPE_UNSPECIFIED",
 		1: "CHANGE_TYPE_SET",
 		2: "CHANGE_TYPE_DELETE",
+		3: "CHANGE_TYPE_ALIAS_SET",
+		4: "CHANGE_TYPE_ALIAS_DELETE",
 	}
 	ChangeType_value = map[string]int32{
-		"CHANGE_TYPE_UNSPECIFIED": 0,
-		"CHANGE_TYPE_SET":         1,
-		"CHANGE_TYPE_DELETE":      2,
+		"CHANGE_TYPE_UNSPECIFIED":  0,
+		"CHANGE_TYPE_SET":          1,
+		"CHANGE_TYPE_DELETE":       2,
+		"CHANGE_TYPE_ALIAS_SET":    3,
+		"CHANGE_TYPE_ALIAS_DELETE": 4,
 	}
 )
 
@@ -1015,6 +1021,427 @@ func (x *CheckAccessResponse) GetCanWrite() bool {
 	return false
 }
 
+// SetAliasRequest is the request for SetAlias.
+type SetAliasRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`   // The alias key name
+	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"` // The canonical target key name
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAliasRequest) Reset() {
+	*x = SetAliasRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAliasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAliasRequest) ProtoMessage() {}
+
+func (x *SetAliasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAliasRequest.ProtoReflect.Descriptor instead.
+func (*SetAliasRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SetAliasRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *SetAliasRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+// SetAliasResponse is the response for SetAlias.
+type SetAliasResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         *Alias                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAliasResponse) Reset() {
+	*x = SetAliasResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAliasResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAliasResponse) ProtoMessage() {}
+
+func (x *SetAliasResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAliasResponse.ProtoReflect.Descriptor instead.
+func (*SetAliasResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SetAliasResponse) GetAlias() *Alias {
+	if x != nil {
+		return x.Alias
+	}
+	return nil
+}
+
+// DeleteAliasRequest is the request for DeleteAlias.
+type DeleteAliasRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAliasRequest) Reset() {
+	*x = DeleteAliasRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAliasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAliasRequest) ProtoMessage() {}
+
+func (x *DeleteAliasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAliasRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAliasRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DeleteAliasRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+// DeleteAliasResponse is the response for DeleteAlias.
+type DeleteAliasResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAliasResponse) Reset() {
+	*x = DeleteAliasResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAliasResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAliasResponse) ProtoMessage() {}
+
+func (x *DeleteAliasResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAliasResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAliasResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{19}
+}
+
+// GetAliasRequest is the request for GetAlias.
+type GetAliasRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAliasRequest) Reset() {
+	*x = GetAliasRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAliasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAliasRequest) ProtoMessage() {}
+
+func (x *GetAliasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAliasRequest.ProtoReflect.Descriptor instead.
+func (*GetAliasRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetAliasRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+// GetAliasResponse is the response for GetAlias.
+type GetAliasResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         *Alias                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAliasResponse) Reset() {
+	*x = GetAliasResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAliasResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAliasResponse) ProtoMessage() {}
+
+func (x *GetAliasResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAliasResponse.ProtoReflect.Descriptor instead.
+func (*GetAliasResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetAliasResponse) GetAlias() *Alias {
+	if x != nil {
+		return x.Alias
+	}
+	return nil
+}
+
+// ListAliasesRequest is the request for ListAliases.
+type ListAliasesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAliasesRequest) Reset() {
+	*x = ListAliasesRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAliasesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAliasesRequest) ProtoMessage() {}
+
+func (x *ListAliasesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAliasesRequest.ProtoReflect.Descriptor instead.
+func (*ListAliasesRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{22}
+}
+
+// ListAliasesResponse is the response for ListAliases.
+type ListAliasesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Aliases       []*Alias               `protobuf:"bytes,1,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAliasesResponse) Reset() {
+	*x = ListAliasesResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAliasesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAliasesResponse) ProtoMessage() {}
+
+func (x *ListAliasesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAliasesResponse.ProtoReflect.Descriptor instead.
+func (*ListAliasesResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListAliasesResponse) GetAliases() []*Alias {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
+}
+
+// Alias represents a key alias mapping.
+type Alias struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`   // The alias key name
+	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"` // The canonical target key name
+	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Alias) Reset() {
+	*x = Alias{}
+	mi := &file_config_v1_config_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Alias) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Alias) ProtoMessage() {}
+
+func (x *Alias) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Alias.ProtoReflect.Descriptor instead.
+func (*Alias) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Alias) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *Alias) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *Alias) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *Alias) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
 // Entry represents a configuration entry.
 type Entry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1032,7 +1459,7 @@ type Entry struct {
 
 func (x *Entry) Reset() {
 	*x = Entry{}
-	mi := &file_config_v1_config_proto_msgTypes[16]
+	mi := &file_config_v1_config_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1044,7 +1471,7 @@ func (x *Entry) String() string {
 func (*Entry) ProtoMessage() {}
 
 func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[16]
+	mi := &file_config_v1_config_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1057,7 +1484,7 @@ func (x *Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entry.ProtoReflect.Descriptor instead.
 func (*Entry) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{16}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Entry) GetNamespace() string {
@@ -1180,7 +1607,28 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"M\n" +
 	"\x13CheckAccessResponse\x12\x19\n" +
 	"\bcan_read\x18\x01 \x01(\bR\acanRead\x12\x1b\n" +
-	"\tcan_write\x18\x02 \x01(\bR\bcanWrite\"\x87\x02\n" +
+	"\tcan_write\x18\x02 \x01(\bR\bcanWrite\"?\n" +
+	"\x0fSetAliasRequest\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\":\n" +
+	"\x10SetAliasResponse\x12&\n" +
+	"\x05alias\x18\x01 \x01(\v2\x10.config.v1.AliasR\x05alias\"*\n" +
+	"\x12DeleteAliasRequest\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\"\x15\n" +
+	"\x13DeleteAliasResponse\"'\n" +
+	"\x0fGetAliasRequest\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\":\n" +
+	"\x10GetAliasResponse\x12&\n" +
+	"\x05alias\x18\x01 \x01(\v2\x10.config.v1.AliasR\x05alias\"\x14\n" +
+	"\x12ListAliasesRequest\"A\n" +
+	"\x13ListAliasesResponse\x12*\n" +
+	"\aaliases\x18\x01 \x03(\v2\x10.config.v1.AliasR\aaliases\"\x8a\x01\n" +
+	"\x05Alias\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x03R\aversion\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x87\x02\n" +
 	"\x05Entry\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
@@ -1196,12 +1644,14 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x16WRITE_MODE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WRITE_MODE_UPSERT\x10\x01\x12\x15\n" +
 	"\x11WRITE_MODE_CREATE\x10\x02\x12\x15\n" +
-	"\x11WRITE_MODE_UPDATE\x10\x03*V\n" +
+	"\x11WRITE_MODE_UPDATE\x10\x03*\x8f\x01\n" +
 	"\n" +
 	"ChangeType\x12\x1b\n" +
 	"\x17CHANGE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fCHANGE_TYPE_SET\x10\x01\x12\x16\n" +
-	"\x12CHANGE_TYPE_DELETE\x10\x022\xdc\x06\n" +
+	"\x12CHANGE_TYPE_DELETE\x10\x02\x12\x19\n" +
+	"\x15CHANGE_TYPE_ALIAS_SET\x10\x03\x12\x1c\n" +
+	"\x18CHANGE_TYPE_ALIAS_DELETE\x10\x042\xf1\t\n" +
 	"\rConfigService\x12c\n" +
 	"\x03Get\x12\x15.config.v1.GetRequest\x1a\x16.config.v1.GetResponse\"-\x82\xd3\xe4\x93\x02'\x12%/v1/namespaces/{namespace}/keys/{key}\x12f\n" +
 	"\x03Set\x12\x15.config.v1.SetRequest\x1a\x16.config.v1.SetResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/v1/namespaces/{namespace}/keys/{key}\x12l\n" +
@@ -1210,7 +1660,11 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\vGetVersions\x12\x1d.config.v1.GetVersionsRequest\x1a\x1e.config.v1.GetVersionsResponse\"6\x82\xd3\xe4\x93\x020\x12./v1/namespaces/{namespace}/keys/{key}/versions\x12p\n" +
 	"\bSnapshot\x12\x1a.config.v1.SnapshotRequest\x1a\x1b.config.v1.SnapshotResponse\"+\x82\xd3\xe4\x93\x02%\x12#/v1/namespaces/{namespace}/snapshot\x12<\n" +
 	"\x05Watch\x12\x17.config.v1.WatchRequest\x1a\x18.config.v1.WatchResponse0\x01\x12w\n" +
-	"\vCheckAccess\x12\x1d.config.v1.CheckAccessRequest\x1a\x1e.config.v1.CheckAccessResponse\")\x82\xd3\xe4\x93\x02#\x12!/v1/namespaces/{namespace}/accessB<Z:github.com/rbaliyan/config-server/proto/config/v1;configpbb\x06proto3"
+	"\vCheckAccess\x12\x1d.config.v1.CheckAccessRequest\x1a\x1e.config.v1.CheckAccessResponse\")\x82\xd3\xe4\x93\x02#\x12!/v1/namespaces/{namespace}/access\x12c\n" +
+	"\bSetAlias\x12\x1a.config.v1.SetAliasRequest\x1a\x1b.config.v1.SetAliasResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\x1a\x13/v1/aliases/{alias}\x12i\n" +
+	"\vDeleteAlias\x12\x1d.config.v1.DeleteAliasRequest\x1a\x1e.config.v1.DeleteAliasResponse\"\x1b\x82\xd3\xe4\x93\x02\x15*\x13/v1/aliases/{alias}\x12`\n" +
+	"\bGetAlias\x12\x1a.config.v1.GetAliasRequest\x1a\x1b.config.v1.GetAliasResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/aliases/{alias}\x12a\n" +
+	"\vListAliases\x12\x1d.config.v1.ListAliasesRequest\x1a\x1e.config.v1.ListAliasesResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/aliasesB<Z:github.com/rbaliyan/config-server/proto/config/v1;configpbb\x06proto3"
 
 var (
 	file_config_v1_config_proto_rawDescOnce sync.Once
@@ -1225,7 +1679,7 @@ func file_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_config_v1_config_proto_goTypes = []any{
 	(WriteMode)(0),                // 0: config.v1.WriteMode
 	(ChangeType)(0),               // 1: config.v1.ChangeType
@@ -1245,41 +1699,62 @@ var file_config_v1_config_proto_goTypes = []any{
 	(*WatchResponse)(nil),         // 15: config.v1.WatchResponse
 	(*CheckAccessRequest)(nil),    // 16: config.v1.CheckAccessRequest
 	(*CheckAccessResponse)(nil),   // 17: config.v1.CheckAccessResponse
-	(*Entry)(nil),                 // 18: config.v1.Entry
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*SetAliasRequest)(nil),       // 18: config.v1.SetAliasRequest
+	(*SetAliasResponse)(nil),      // 19: config.v1.SetAliasResponse
+	(*DeleteAliasRequest)(nil),    // 20: config.v1.DeleteAliasRequest
+	(*DeleteAliasResponse)(nil),   // 21: config.v1.DeleteAliasResponse
+	(*GetAliasRequest)(nil),       // 22: config.v1.GetAliasRequest
+	(*GetAliasResponse)(nil),      // 23: config.v1.GetAliasResponse
+	(*ListAliasesRequest)(nil),    // 24: config.v1.ListAliasesRequest
+	(*ListAliasesResponse)(nil),   // 25: config.v1.ListAliasesResponse
+	(*Alias)(nil),                 // 26: config.v1.Alias
+	(*Entry)(nil),                 // 27: config.v1.Entry
+	(*timestamppb.Timestamp)(nil), // 28: google.protobuf.Timestamp
 }
 var file_config_v1_config_proto_depIdxs = []int32{
-	18, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
+	27, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
 	0,  // 1: config.v1.SetRequest.write_mode:type_name -> config.v1.WriteMode
-	18, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
-	18, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
-	18, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
-	18, // 5: config.v1.SnapshotResponse.entries:type_name -> config.v1.Entry
+	27, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
+	27, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
+	27, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
+	27, // 5: config.v1.SnapshotResponse.entries:type_name -> config.v1.Entry
 	1,  // 6: config.v1.WatchResponse.type:type_name -> config.v1.ChangeType
-	18, // 7: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
-	19, // 8: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
-	19, // 9: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 10: config.v1.ConfigService.Get:input_type -> config.v1.GetRequest
-	4,  // 11: config.v1.ConfigService.Set:input_type -> config.v1.SetRequest
-	6,  // 12: config.v1.ConfigService.Delete:input_type -> config.v1.DeleteRequest
-	8,  // 13: config.v1.ConfigService.List:input_type -> config.v1.ListRequest
-	10, // 14: config.v1.ConfigService.GetVersions:input_type -> config.v1.GetVersionsRequest
-	12, // 15: config.v1.ConfigService.Snapshot:input_type -> config.v1.SnapshotRequest
-	14, // 16: config.v1.ConfigService.Watch:input_type -> config.v1.WatchRequest
-	16, // 17: config.v1.ConfigService.CheckAccess:input_type -> config.v1.CheckAccessRequest
-	3,  // 18: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
-	5,  // 19: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
-	7,  // 20: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
-	9,  // 21: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
-	11, // 22: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
-	13, // 23: config.v1.ConfigService.Snapshot:output_type -> config.v1.SnapshotResponse
-	15, // 24: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
-	17, // 25: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
-	18, // [18:26] is the sub-list for method output_type
-	10, // [10:18] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	27, // 7: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
+	26, // 8: config.v1.SetAliasResponse.alias:type_name -> config.v1.Alias
+	26, // 9: config.v1.GetAliasResponse.alias:type_name -> config.v1.Alias
+	26, // 10: config.v1.ListAliasesResponse.aliases:type_name -> config.v1.Alias
+	28, // 11: config.v1.Alias.created_at:type_name -> google.protobuf.Timestamp
+	28, // 12: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
+	28, // 13: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 14: config.v1.ConfigService.Get:input_type -> config.v1.GetRequest
+	4,  // 15: config.v1.ConfigService.Set:input_type -> config.v1.SetRequest
+	6,  // 16: config.v1.ConfigService.Delete:input_type -> config.v1.DeleteRequest
+	8,  // 17: config.v1.ConfigService.List:input_type -> config.v1.ListRequest
+	10, // 18: config.v1.ConfigService.GetVersions:input_type -> config.v1.GetVersionsRequest
+	12, // 19: config.v1.ConfigService.Snapshot:input_type -> config.v1.SnapshotRequest
+	14, // 20: config.v1.ConfigService.Watch:input_type -> config.v1.WatchRequest
+	16, // 21: config.v1.ConfigService.CheckAccess:input_type -> config.v1.CheckAccessRequest
+	18, // 22: config.v1.ConfigService.SetAlias:input_type -> config.v1.SetAliasRequest
+	20, // 23: config.v1.ConfigService.DeleteAlias:input_type -> config.v1.DeleteAliasRequest
+	22, // 24: config.v1.ConfigService.GetAlias:input_type -> config.v1.GetAliasRequest
+	24, // 25: config.v1.ConfigService.ListAliases:input_type -> config.v1.ListAliasesRequest
+	3,  // 26: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
+	5,  // 27: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
+	7,  // 28: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
+	9,  // 29: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
+	11, // 30: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
+	13, // 31: config.v1.ConfigService.Snapshot:output_type -> config.v1.SnapshotResponse
+	15, // 32: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
+	17, // 33: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
+	19, // 34: config.v1.ConfigService.SetAlias:output_type -> config.v1.SetAliasResponse
+	21, // 35: config.v1.ConfigService.DeleteAlias:output_type -> config.v1.DeleteAliasResponse
+	23, // 36: config.v1.ConfigService.GetAlias:output_type -> config.v1.GetAliasResponse
+	25, // 37: config.v1.ConfigService.ListAliases:output_type -> config.v1.ListAliasesResponse
+	26, // [26:38] is the sub-list for method output_type
+	14, // [14:26] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_config_v1_config_proto_init() }
@@ -1293,7 +1768,7 @@ func file_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_v1_config_proto_rawDesc), len(file_config_v1_config_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   17,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

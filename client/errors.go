@@ -62,6 +62,9 @@ func fromGRPCError(err error) error {
 		return config.ErrNotFound
 
 	case codes.AlreadyExists:
+		if strings.Contains(st.Message(), "alias") {
+			return config.ErrAliasExists
+		}
 		return config.ErrKeyExists
 
 	case codes.InvalidArgument:

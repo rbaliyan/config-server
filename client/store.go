@@ -82,6 +82,7 @@ func NewRemoteStore(addr string, opts ...Option) (*RemoteStore, error) {
 var (
 	_ config.Store          = (*RemoteStore)(nil)
 	_ config.VersionedStore = (*RemoteStore)(nil)
+	_ config.AliasStore     = (*RemoteStore)(nil)
 )
 
 // State returns the current connection state.
@@ -723,6 +724,11 @@ func (s *RemoteStore) watchStream(
 			event.Value = protoToValue(resp.Entry)
 		case configpb.ChangeType_CHANGE_TYPE_DELETE:
 			event.Type = config.ChangeTypeDelete
+		case configpb.ChangeType_CHANGE_TYPE_ALIAS_SET:
+			event.Type = config.ChangeTypeAliasSet
+			event.Value = protoToValue(resp.Entry)
+		case configpb.ChangeType_CHANGE_TYPE_ALIAS_DELETE:
+			event.Type = config.ChangeTypeAliasDelete
 		default:
 			// Skip unrecognized or unspecified change types
 			continue
@@ -738,6 +744,108 @@ func (s *RemoteStore) watchStream(
 			return connected, config.ErrStoreClosed
 		}
 	}
+}
+
+// SetAlias creates a new alias on the remote server.
+func (s *RemoteStore) SetAlias(ctx context.Context, alias, target string) (config.Value, error) {
+	var result config.Value
+	err := s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.SetAlias(ctx, &configpb.SetAliasRequest{
+			Alias:  alias,
+			Target: target,
+		})
+		if err != nil {
+			return fromGRPCError(err)
+		}
+		result = aliasProtoToValue(resp.Alias)
+		return nil
+	})
+	return result, err
+}
+
+// DeleteAlias removes an alias on the remote server.
+func (s *RemoteStore) DeleteAlias(ctx context.Context, alias string) error {
+	return s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		_, err = client.DeleteAlias(ctx, &configpb.DeleteAliasRequest{
+			Alias: alias,
+		})
+		if err != nil {
+			return fromGRPCError(err)
+		}
+		return nil
+	})
+}
+
+// GetAlias retrieves a specific alias from the remote server.
+func (s *RemoteStore) GetAlias(ctx context.Context, alias string) (config.Value, error) {
+	var result config.Value
+	err := s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.GetAlias(ctx, &configpb.GetAliasRequest{
+			Alias: alias,
+		})
+		if err != nil {
+			return fromGRPCError(err)
+		}
+		result = aliasProtoToValue(resp.Alias)
+		return nil
+	})
+	return result, err
+}
+
+// ListAliases returns all aliases from the remote server.
+func (s *RemoteStore) ListAliases(ctx context.Context) (map[string]config.Value, error) {
+	var result map[string]config.Value
+	err := s.retry(ctx, func(ctx context.Context) error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.ListAliases(ctx, &configpb.ListAliasesRequest{})
+		if err != nil {
+			return fromGRPCError(err)
+		}
+
+		result = make(map[string]config.Value, len(resp.Aliases))
+		for _, a := range resp.Aliases {
+			result[a.Alias] = aliasProtoToValue(a)
+		}
+		return nil
+	})
+	return result, err
+}
+
+// aliasProtoToValue converts a proto Alias to a config.Value wrapping the target string.
+func aliasProtoToValue(a *configpb.Alias) config.Value {
+	if a == nil {
+		return nil
+	}
+
+	var opts []config.ValueOption
+	if a.Version > 0 || a.CreatedAt != nil {
+		var createdAt time.Time
+		if a.CreatedAt != nil {
+			createdAt = a.CreatedAt.AsTime()
+		}
+		opts = append(opts, config.WithValueMetadata(a.Version, createdAt, createdAt))
+	}
+
+	return config.NewValue(a.Target, opts...)
 }
 
 // protoToValue converts a proto Entry to a config.Value.
