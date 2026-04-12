@@ -321,6 +321,10 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 				resp.Type = configpb.ChangeType_CHANGE_TYPE_SET
 			case config.ChangeTypeDelete:
 				resp.Type = configpb.ChangeType_CHANGE_TYPE_DELETE
+			case config.ChangeTypeAliasSet:
+				resp.Type = configpb.ChangeType_CHANGE_TYPE_ALIAS_SET
+			case config.ChangeTypeAliasDelete:
+				resp.Type = configpb.ChangeType_CHANGE_TYPE_ALIAS_DELETE
 			default:
 				// Skip unrecognized change types (e.g. CHANGE_TYPE_UNSPECIFIED)
 				continue
@@ -359,6 +363,137 @@ func (s *Service) CheckAccess(ctx context.Context, req *configpb.CheckAccessRequ
 	}
 
 	return resp, nil
+}
+
+// SetAlias creates a new key alias.
+func (s *Service) SetAlias(ctx context.Context, req *configpb.SetAliasRequest) (*configpb.SetAliasResponse, error) {
+	if req.Alias == "" {
+		return nil, status.Error(codes.InvalidArgument, "alias is required")
+	}
+	if req.Target == "" {
+		return nil, status.Error(codes.InvalidArgument, "target is required")
+	}
+
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Key:       req.Alias,
+		Operation: OperationWrite,
+	}); err != nil {
+		return nil, err
+	}
+
+	as, ok := s.store.(config.AliasStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "store does not support aliases")
+	}
+
+	val, err := as.SetAlias(ctx, req.Alias, req.Target)
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	return &configpb.SetAliasResponse{
+		Alias: aliasToProto(req.Alias, req.Target, val),
+	}, nil
+}
+
+// DeleteAlias removes a key alias.
+func (s *Service) DeleteAlias(ctx context.Context, req *configpb.DeleteAliasRequest) (*configpb.DeleteAliasResponse, error) {
+	if req.Alias == "" {
+		return nil, status.Error(codes.InvalidArgument, "alias is required")
+	}
+
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Key:       req.Alias,
+		Operation: OperationDelete,
+	}); err != nil {
+		return nil, err
+	}
+
+	as, ok := s.store.(config.AliasStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "store does not support aliases")
+	}
+
+	if err := as.DeleteAlias(ctx, req.Alias); err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	return &configpb.DeleteAliasResponse{}, nil
+}
+
+// GetAlias retrieves a specific alias.
+func (s *Service) GetAlias(ctx context.Context, req *configpb.GetAliasRequest) (*configpb.GetAliasResponse, error) {
+	if req.Alias == "" {
+		return nil, status.Error(codes.InvalidArgument, "alias is required")
+	}
+
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Key:       req.Alias,
+		Operation: OperationRead,
+	}); err != nil {
+		return nil, err
+	}
+
+	as, ok := s.store.(config.AliasStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "store does not support aliases")
+	}
+
+	val, err := as.GetAlias(ctx, req.Alias)
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	target, _ := val.String()
+	return &configpb.GetAliasResponse{
+		Alias: aliasToProto(req.Alias, target, val),
+	}, nil
+}
+
+// ListAliases returns all registered aliases.
+func (s *Service) ListAliases(ctx context.Context, req *configpb.ListAliasesRequest) (*configpb.ListAliasesResponse, error) {
+	if err := s.authorizer.Authorize(ctx, AuthRequest{
+		Operation: OperationList,
+	}); err != nil {
+		return nil, err
+	}
+
+	as, ok := s.store.(config.AliasStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "store does not support aliases")
+	}
+
+	aliases, err := as.ListAliases(ctx)
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	result := make([]*configpb.Alias, 0, len(aliases))
+	for alias, val := range aliases {
+		target, _ := val.String()
+		result = append(result, aliasToProto(alias, target, val))
+	}
+
+	return &configpb.ListAliasesResponse{
+		Aliases: result,
+	}, nil
+}
+
+// aliasToProto converts an alias to its proto representation.
+func aliasToProto(alias, target string, val config.Value) *configpb.Alias {
+	a := &configpb.Alias{
+		Alias:  alias,
+		Target: target,
+	}
+	if val != nil {
+		if meta := val.Metadata(); meta != nil {
+			a.Version = meta.Version()
+			if !meta.CreatedAt().IsZero() {
+				a.CreatedAt = timestamppb.New(meta.CreatedAt())
+			}
+		}
+	}
+	return a
 }
 
 // valueToProto converts a config.Value to a proto Entry.

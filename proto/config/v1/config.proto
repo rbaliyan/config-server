@@ -62,6 +62,37 @@ service ConfigService {
       get: "/v1/namespaces/{namespace}/access"
     };
   }
+
+  // SetAlias creates a new key alias mapping.
+  // Returns ALREADY_EXISTS if the alias key is already registered or conflicts
+  // with an existing configuration key.
+  rpc SetAlias(SetAliasRequest) returns (SetAliasResponse) {
+    option (google.api.http) = {
+      put: "/v1/aliases/{alias}"
+      body: "*"
+    };
+  }
+
+  // DeleteAlias removes a key alias.
+  rpc DeleteAlias(DeleteAliasRequest) returns (DeleteAliasResponse) {
+    option (google.api.http) = {
+      delete: "/v1/aliases/{alias}"
+    };
+  }
+
+  // GetAlias retrieves a specific alias and its target.
+  rpc GetAlias(GetAliasRequest) returns (GetAliasResponse) {
+    option (google.api.http) = {
+      get: "/v1/aliases/{alias}"
+    };
+  }
+
+  // ListAliases returns all registered key aliases.
+  rpc ListAliases(ListAliasesRequest) returns (ListAliasesResponse) {
+    option (google.api.http) = {
+      get: "/v1/aliases"
+    };
+  }
 }
 
 // GetRequest is the request for Get.
@@ -166,6 +197,8 @@ enum ChangeType {
   CHANGE_TYPE_UNSPECIFIED = 0;
   CHANGE_TYPE_SET = 1;
   CHANGE_TYPE_DELETE = 2;
+  CHANGE_TYPE_ALIAS_SET = 3;
+  CHANGE_TYPE_ALIAS_DELETE = 4;
 }
 
 // CheckAccessRequest is the request for CheckAccess.
@@ -178,6 +211,51 @@ message CheckAccessRequest {
 message CheckAccessResponse {
   bool can_read = 1;
   bool can_write = 2;
+}
+
+// SetAliasRequest is the request for SetAlias.
+message SetAliasRequest {
+  string alias = 1;     // The alias key name
+  string target = 2;    // The canonical target key name
+}
+
+// SetAliasResponse is the response for SetAlias.
+message SetAliasResponse {
+  Alias alias = 1;
+}
+
+// DeleteAliasRequest is the request for DeleteAlias.
+message DeleteAliasRequest {
+  string alias = 1;
+}
+
+// DeleteAliasResponse is the response for DeleteAlias.
+message DeleteAliasResponse {}
+
+// GetAliasRequest is the request for GetAlias.
+message GetAliasRequest {
+  string alias = 1;
+}
+
+// GetAliasResponse is the response for GetAlias.
+message GetAliasResponse {
+  Alias alias = 1;
+}
+
+// ListAliasesRequest is the request for ListAliases.
+message ListAliasesRequest {}
+
+// ListAliasesResponse is the response for ListAliases.
+message ListAliasesResponse {
+  repeated Alias aliases = 1;
+}
+
+// Alias represents a key alias mapping.
+message Alias {
+  string alias = 1;       // The alias key name
+  string target = 2;      // The canonical target key name
+  int64 version = 3;
+  google.protobuf.Timestamp created_at = 4;
 }
 
 // Entry represents a configuration entry.

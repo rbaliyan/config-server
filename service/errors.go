@@ -73,6 +73,12 @@ func toGRPCError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, config.ErrVersioningNotSupported):
 		return status.Error(codes.Unimplemented, err.Error())
+	case errors.Is(err, config.ErrAliasExists):
+		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, config.ErrAliasSelf):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, config.ErrAliasChain):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, config.ErrCodecNotFound):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:

@@ -27,6 +27,10 @@ const (
 	ConfigService_Snapshot_FullMethodName    = "/config.v1.ConfigService/Snapshot"
 	ConfigService_Watch_FullMethodName       = "/config.v1.ConfigService/Watch"
 	ConfigService_CheckAccess_FullMethodName = "/config.v1.ConfigService/CheckAccess"
+	ConfigService_SetAlias_FullMethodName    = "/config.v1.ConfigService/SetAlias"
+	ConfigService_DeleteAlias_FullMethodName = "/config.v1.ConfigService/DeleteAlias"
+	ConfigService_GetAlias_FullMethodName    = "/config.v1.ConfigService/GetAlias"
+	ConfigService_ListAliases_FullMethodName = "/config.v1.ConfigService/ListAliases"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
@@ -52,6 +56,16 @@ type ConfigServiceClient interface {
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
 	// CheckAccess verifies the caller's access level for a namespace.
 	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
+	// SetAlias creates a new key alias mapping.
+	// Returns ALREADY_EXISTS if the alias key is already registered or conflicts
+	// with an existing configuration key.
+	SetAlias(ctx context.Context, in *SetAliasRequest, opts ...grpc.CallOption) (*SetAliasResponse, error)
+	// DeleteAlias removes a key alias.
+	DeleteAlias(ctx context.Context, in *DeleteAliasRequest, opts ...grpc.CallOption) (*DeleteAliasResponse, error)
+	// GetAlias retrieves a specific alias and its target.
+	GetAlias(ctx context.Context, in *GetAliasRequest, opts ...grpc.CallOption) (*GetAliasResponse, error)
+	// ListAliases returns all registered key aliases.
+	ListAliases(ctx context.Context, in *ListAliasesRequest, opts ...grpc.CallOption) (*ListAliasesResponse, error)
 }
 
 type configServiceClient struct {
@@ -151,6 +165,46 @@ func (c *configServiceClient) CheckAccess(ctx context.Context, in *CheckAccessRe
 	return out, nil
 }
 
+func (c *configServiceClient) SetAlias(ctx context.Context, in *SetAliasRequest, opts ...grpc.CallOption) (*SetAliasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAliasResponse)
+	err := c.cc.Invoke(ctx, ConfigService_SetAlias_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configServiceClient) DeleteAlias(ctx context.Context, in *DeleteAliasRequest, opts ...grpc.CallOption) (*DeleteAliasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAliasResponse)
+	err := c.cc.Invoke(ctx, ConfigService_DeleteAlias_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configServiceClient) GetAlias(ctx context.Context, in *GetAliasRequest, opts ...grpc.CallOption) (*GetAliasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAliasResponse)
+	err := c.cc.Invoke(ctx, ConfigService_GetAlias_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configServiceClient) ListAliases(ctx context.Context, in *ListAliasesRequest, opts ...grpc.CallOption) (*ListAliasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAliasesResponse)
+	err := c.cc.Invoke(ctx, ConfigService_ListAliases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
@@ -174,6 +228,16 @@ type ConfigServiceServer interface {
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
 	// CheckAccess verifies the caller's access level for a namespace.
 	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
+	// SetAlias creates a new key alias mapping.
+	// Returns ALREADY_EXISTS if the alias key is already registered or conflicts
+	// with an existing configuration key.
+	SetAlias(context.Context, *SetAliasRequest) (*SetAliasResponse, error)
+	// DeleteAlias removes a key alias.
+	DeleteAlias(context.Context, *DeleteAliasRequest) (*DeleteAliasResponse, error)
+	// GetAlias retrieves a specific alias and its target.
+	GetAlias(context.Context, *GetAliasRequest) (*GetAliasResponse, error)
+	// ListAliases returns all registered key aliases.
+	ListAliases(context.Context, *ListAliasesRequest) (*ListAliasesResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
 }
 
@@ -207,6 +271,18 @@ func (UnimplementedConfigServiceServer) Watch(*WatchRequest, grpc.ServerStreamin
 }
 func (UnimplementedConfigServiceServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckAccess not implemented")
+}
+func (UnimplementedConfigServiceServer) SetAlias(context.Context, *SetAliasRequest) (*SetAliasResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetAlias not implemented")
+}
+func (UnimplementedConfigServiceServer) DeleteAlias(context.Context, *DeleteAliasRequest) (*DeleteAliasResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteAlias not implemented")
+}
+func (UnimplementedConfigServiceServer) GetAlias(context.Context, *GetAliasRequest) (*GetAliasResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAlias not implemented")
+}
+func (UnimplementedConfigServiceServer) ListAliases(context.Context, *ListAliasesRequest) (*ListAliasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAliases not implemented")
 }
 func (UnimplementedConfigServiceServer) mustEmbedUnimplementedConfigServiceServer() {}
 func (UnimplementedConfigServiceServer) testEmbeddedByValue()                       {}
@@ -366,6 +442,78 @@ func _ConfigService_CheckAccess_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConfigService_SetAlias_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAliasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).SetAlias(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_SetAlias_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).SetAlias(ctx, req.(*SetAliasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigService_DeleteAlias_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAliasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).DeleteAlias(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_DeleteAlias_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).DeleteAlias(ctx, req.(*DeleteAliasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigService_GetAlias_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAliasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).GetAlias(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_GetAlias_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).GetAlias(ctx, req.(*GetAliasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigService_ListAliases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAliasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).ListAliases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_ListAliases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).ListAliases(ctx, req.(*ListAliasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConfigService_ServiceDesc is the grpc.ServiceDesc for ConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -400,6 +548,22 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckAccess",
 			Handler:    _ConfigService_CheckAccess_Handler,
+		},
+		{
+			MethodName: "SetAlias",
+			Handler:    _ConfigService_SetAlias_Handler,
+		},
+		{
+			MethodName: "DeleteAlias",
+			Handler:    _ConfigService_DeleteAlias_Handler,
+		},
+		{
+			MethodName: "GetAlias",
+			Handler:    _ConfigService_GetAlias_Handler,
+		},
+		{
+			MethodName: "ListAliases",
+			Handler:    _ConfigService_ListAliases_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
