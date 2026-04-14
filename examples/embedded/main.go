@@ -87,8 +87,6 @@ func main() {
 	grpcServer.GracefulStop()
 }
 
-type roleKey struct{}
-
 // namespaceGuard implements service.SecurityGuard with namespace-based access control.
 type namespaceGuard struct {
 	allowed map[string][]string // role -> allowed namespaces
