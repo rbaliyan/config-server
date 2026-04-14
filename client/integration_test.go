@@ -32,8 +32,8 @@ func setupIntegrationTest(t *testing.T) *RemoteStore {
 		t.Fatalf("failed to connect memory store: %v", err)
 	}
 
-	// Create the gRPC service with AllowAll authorizer for testing.
-	svc, err := service.NewService(memStore, service.WithAuthorizer(service.AllowAll()))
+	// Create the gRPC service with AllowAll guard for testing.
+	svc, err := service.NewService(memStore, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}

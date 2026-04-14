@@ -38,9 +38,9 @@ func main() {
 	_, _ = store.Set(ctx, "default", "database/host", config.NewValue("localhost"))
 	_, _ = store.Set(ctx, "default", "database/port", config.NewValue(5432))
 
-	// Create the config service with AllowAll authorizer (for demo only!)
+	// Create the config service with AllowAll guard (for demo only!)
 	configSvc, err := service.NewService(store,
-		service.WithAuthorizer(service.AllowAll()),
+		service.WithSecurityGuard(service.AllowAll()),
 	)
 	if err != nil {
 		logger.Error("failed to create config service", "error", err)

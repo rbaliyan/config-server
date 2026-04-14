@@ -118,7 +118,7 @@ func setupSSETest(t *testing.T, opts ...service.Option) (*Handler, config.Store)
 	t.Cleanup(func() { store.Close(ctx) })
 
 	if len(opts) == 0 {
-		opts = []service.Option{service.WithAuthorizer(service.AllowAll())}
+		opts = []service.Option{service.WithSecurityGuard(service.AllowAll())}
 	}
 	svc, err := service.NewService(store, opts...)
 	if err != nil {
@@ -244,7 +244,7 @@ func TestSSEWatch_Heartbeat(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSSEWatch_ClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestSSEWatch_Authorization(t *testing.T) {
+func TestSSEWatch_AuthMiddleware(t *testing.T) {
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -318,8 +318,7 @@ func TestSSEWatch_Authorization(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	// DenyAll authorizer.
-	svc, err := service.NewService(store)
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -329,23 +328,15 @@ func TestSSEWatch_Authorization(t *testing.T) {
 		t.Fatalf("NewInProcessHandler failed: %v", err)
 	}
 
+	// Wrap handler with AuthMiddleware using DenyAll guard.
+	wrapped := AuthMiddleware(service.DenyAll())(handler)
+
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=secret", nil)
-	rec := newSyncRecorder()
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		handler.ServeHTTP(rec, req)
-	}()
-
-	<-done
-
-	body := rec.bodyString()
-
-	// The in-process handler writes SSE headers before calling svc.Watch,
-	// so we get an error event instead of an HTTP error code.
-	if !strings.Contains(body, "event: error") {
-		t.Errorf("expected SSE error event for denied access, got:\n%s", body)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -556,7 +547,7 @@ func TestHandler_Close_InProcess(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -582,7 +573,7 @@ func TestHandler_Close_InProcess(t *testing.T) {
 func setupBufconn(t *testing.T, store config.Store) *bufconn.Listener {
 	t.Helper()
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -685,13 +676,15 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	// Use DenyAll authorizer on the server.
-	svc, err := service.NewService(store)
+	// Use DenyAll guard via AuthInterceptor on the gRPC server.
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
 	lis := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainStreamInterceptor(service.StreamAuthInterceptor(service.DenyAll())),
+	)
 	configpb.RegisterConfigServiceServer(grpcServer, svc)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -731,7 +724,7 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 	if !strings.Contains(body, "event: error") {
 		t.Errorf("expected SSE error event in body: %s", body)
 	}
-	if !strings.Contains(body, "no authorizer configured") {
+	if !strings.Contains(body, "no security guard configured") {
 		t.Errorf("expected auth denial message in body: %s", body)
 	}
 }
@@ -958,7 +951,7 @@ func TestSSEWatch_MetadataPropagation(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -984,7 +977,7 @@ func TestSSEWatch_MetadataPropagation(t *testing.T) {
 	}()
 
 	// If metadata propagation works, the handler should start normally
-	// (AllowAll authorizer accepts everything).
+	// (AllowAll guard accepts everything).
 	if !waitForBody(t, rec, 2*time.Second, func(s string) bool {
 		return strings.Contains(s, ": connected")
 	}) {

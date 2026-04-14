@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/rbaliyan/config"
-	"github.com/rbaliyan/config/memory"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
+	"github.com/rbaliyan/config/memory"
 )
 
 func FuzzServiceGet(f *testing.F) {
@@ -21,7 +21,7 @@ func FuzzServiceGet(f *testing.F) {
 	if err := store.Connect(ctx); err != nil {
 		f.Fatal(err)
 	}
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func FuzzServiceSet(f *testing.F) {
 	if err := store.Connect(ctx); err != nil {
 		f.Fatal(err)
 	}
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func FuzzServiceList(f *testing.F) {
 	if err := store.Connect(ctx); err != nil {
 		f.Fatal(err)
 	}
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		f.Fatal(err)
 	}

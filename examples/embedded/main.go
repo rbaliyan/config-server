@@ -37,29 +37,30 @@ func main() {
 	_, _ = store.Set(ctx, "production", "api/key", config.NewValue("secret-key"))
 	_, _ = store.Set(ctx, "staging", "api/key", config.NewValue("staging-key"))
 
-	// Create config service with custom authorizer
+	// Create security guard with namespace-based access control
+	guard := &namespaceGuard{
+		allowed: map[string][]string{
+			"admin":    {"production", "staging"},
+			"readonly": {"staging"},
+		},
+	}
+
+	// Create config service
 	configSvc, err := service.NewService(store,
-		service.WithAuthorizer(&namespaceAuthorizer{
-			allowed: map[string][]string{
-				"admin":    {"production", "staging"},
-				"readonly": {"staging"},
-			},
-		}),
+		service.WithSecurityGuard(guard),
 	)
 	if err != nil {
 		log.Fatal("failed to create config service:", err)
 	}
 
-	// Create gRPC server with auth interceptors.
-	// WARNING: Auth must cover both unary and stream interceptors. Without
-	// a stream interceptor, streaming RPCs (e.g., Watch) bypass authentication.
+	// Create gRPC server with built-in auth interceptors.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			authInterceptor,
+			service.AuthInterceptor(guard),
 			service.LoggingInterceptor(logger),
 		),
 		grpc.ChainStreamInterceptor(
-			streamAuthInterceptor,
+			service.StreamAuthInterceptor(guard),
 			service.StreamLoggingInterceptor(logger),
 		),
 	)
@@ -86,8 +87,14 @@ func main() {
 	grpcServer.GracefulStop()
 }
 
-// authInterceptor extracts the role from metadata and adds it to context.
-func authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+type roleKey struct{}
+
+// namespaceGuard implements service.SecurityGuard with namespace-based access control.
+type namespaceGuard struct {
+	allowed map[string][]string // role -> allowed namespaces
+}
+
+func (g *namespaceGuard) Authenticate(ctx context.Context) (service.Identity, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
@@ -98,68 +105,24 @@ func authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, h
 		return nil, status.Error(codes.Unauthenticated, "missing role")
 	}
 
-	// Add role to context for authorizer
-	ctx = context.WithValue(ctx, roleKey{}, roles[0])
-	return handler(ctx, req)
+	return &roleIdentity{role: roles[0]}, nil
 }
 
-// streamAuthInterceptor extracts the role from metadata for streaming RPCs.
-func streamAuthInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	ctx := ss.Context()
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return status.Error(codes.Unauthenticated, "missing metadata")
+func (g *namespaceGuard) Authorize(_ context.Context, id service.Identity, _ string) (service.Decision, error) {
+	role := id.(*roleIdentity).role
+	if _, ok := g.allowed[role]; !ok {
+		return service.Decision{
+			Allowed: false,
+			Reason:  "unknown role: " + role,
+		}, nil
 	}
-
-	roles := md.Get("x-role")
-	if len(roles) == 0 {
-		return status.Error(codes.Unauthenticated, "missing role")
-	}
-
-	ctx = context.WithValue(ctx, roleKey{}, roles[0])
-	wrapped := &wrappedStream{ServerStream: ss, ctx: ctx}
-	return handler(srv, wrapped)
+	return service.Decision{Allowed: true}, nil
 }
 
-// wrappedStream wraps a grpc.ServerStream to override the context.
-type wrappedStream struct {
-	grpc.ServerStream
-	ctx context.Context
+// roleIdentity holds the authenticated role.
+type roleIdentity struct {
+	role string
 }
 
-func (w *wrappedStream) Context() context.Context {
-	return w.ctx
-}
-
-type roleKey struct{}
-
-// namespaceAuthorizer implements service.Authorizer with namespace-based access control.
-type namespaceAuthorizer struct {
-	allowed map[string][]string // role -> allowed namespaces
-}
-
-func (a *namespaceAuthorizer) Authorize(ctx context.Context, req service.AuthRequest) error {
-	role, ok := ctx.Value(roleKey{}).(string)
-	if !ok {
-		return status.Error(codes.PermissionDenied, "no role in context")
-	}
-
-	namespaces, ok := a.allowed[role]
-	if !ok {
-		return status.Errorf(codes.PermissionDenied, "unknown role: %s", role)
-	}
-
-	// Skip namespace check for operations that don't have one
-	if req.Namespace == "" {
-		return nil
-	}
-
-	for _, ns := range namespaces {
-		if ns == req.Namespace {
-			return nil
-		}
-	}
-
-	return status.Errorf(codes.PermissionDenied,
-		"role %s cannot access namespace %s", role, req.Namespace)
-}
+func (r *roleIdentity) UserID() string         { return r.role }
+func (r *roleIdentity) Claims() map[string]any { return map[string]any{"role": r.role} }

@@ -19,13 +19,6 @@ func (s *Service) Snapshot(ctx context.Context, req *configpb.SnapshotRequest) (
 		return nil, status.Error(codes.InvalidArgument, "namespace is required")
 	}
 
-	if err := s.authorizer.Authorize(ctx, AuthRequest{
-		Namespace: req.Namespace,
-		Operation: OperationRead,
-	}); err != nil {
-		return nil, err
-	}
-
 	entries, err := s.collectAllEntries(ctx, req.Namespace)
 	if err != nil {
 		// collectAllEntries may return gRPC status errors (e.g., ResourceExhausted)
