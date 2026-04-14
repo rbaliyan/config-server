@@ -6,8 +6,8 @@ import (
 	"math"
 
 	"github.com/rbaliyan/config"
-	"github.com/rbaliyan/config/codec"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
+	"github.com/rbaliyan/config/codec"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -74,7 +74,7 @@ func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.
 		return nil, toGRPCError(err)
 	}
 
-	entry, err := valueToProto(req.Namespace, req.Key, val)
+	entry, err := valueToProto(ctx, req.Namespace, req.Key, val)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
@@ -120,7 +120,7 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 	var val config.Value
 	if codec.Get(codecName) != nil {
 		var err error
-		val, err = config.NewValueFromBytes(req.Value, codecName, opts...)
+		val, err = config.NewValueFromBytes(ctx, req.Value, codecName, opts...)
 		if err != nil {
 			return nil, toGRPCError(err)
 		}
@@ -133,7 +133,7 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 		return nil, toGRPCError(err)
 	}
 
-	entry, err := valueToProto(req.Namespace, req.Key, result)
+	entry, err := valueToProto(ctx, req.Namespace, req.Key, result)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
@@ -195,7 +195,7 @@ func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configp
 
 	entries := make([]*configpb.Entry, 0, len(page.Results()))
 	for key, val := range page.Results() {
-		entry, err := valueToProto(req.Namespace, key, val)
+		entry, err := valueToProto(ctx, req.Namespace, key, val)
 		if err != nil {
 			return nil, toGRPCError(err)
 		}
@@ -245,7 +245,7 @@ func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequ
 
 	entries := make([]*configpb.Entry, 0, len(page.Versions()))
 	for _, val := range page.Versions() {
-		entry, err := valueToProto(req.Namespace, req.Key, val)
+		entry, err := valueToProto(ctx, req.Namespace, req.Key, val)
 		if err != nil {
 			return nil, toGRPCError(err)
 		}
@@ -307,7 +307,7 @@ func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigServic
 				return nil
 			}
 
-			entry, err := valueToProto(event.Namespace, event.Key, event.Value)
+			entry, err := valueToProto(ctx, event.Namespace, event.Key, event.Value)
 			if err != nil {
 				return toGRPCError(err)
 			}
@@ -498,7 +498,7 @@ func aliasToProto(alias, target string, val config.Value) *configpb.Alias {
 
 // valueToProto converts a config.Value to a proto Entry.
 // Returns an error if the value cannot be marshaled.
-func valueToProto(namespace, key string, val config.Value) (*configpb.Entry, error) {
+func valueToProto(ctx context.Context, namespace, key string, val config.Value) (*configpb.Entry, error) {
 	if val == nil {
 		return &configpb.Entry{
 			Namespace: namespace,
@@ -514,7 +514,7 @@ func valueToProto(namespace, key string, val config.Value) (*configpb.Entry, err
 	}
 
 	// Marshal value to bytes
-	data, err := val.Marshal()
+	data, err := val.Marshal(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("marshal value %s/%s: %w", namespace, key, err)
 	}

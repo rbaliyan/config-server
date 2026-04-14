@@ -440,7 +440,7 @@ func TestCircuitBreaker_CustomThreshold(t *testing.T) {
 
 func TestProtoToValue(t *testing.T) {
 	t.Run("nil entry", func(t *testing.T) {
-		val := protoToValue(nil)
+		val := protoToValue(context.Background(), nil)
 		if val != nil {
 			t.Error("expected nil for nil entry")
 		}
@@ -458,7 +458,7 @@ func TestProtoToValue(t *testing.T) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
-		val := protoToValue(entry)
+		val := protoToValue(context.Background(), entry)
 		if val == nil {
 			t.Fatal("expected non-nil value")
 		}
@@ -481,7 +481,7 @@ func TestProtoToValue(t *testing.T) {
 			Value:     []byte(`42`),
 			Codec:     "json",
 		}
-		val := protoToValue(entry)
+		val := protoToValue(context.Background(), entry)
 		if val == nil {
 			t.Fatal("expected non-nil value")
 		}
@@ -494,7 +494,7 @@ func TestProtoToValue(t *testing.T) {
 			Value:     []byte("not-valid-json"),
 			Codec:     "json",
 		}
-		val := protoToValue(entry)
+		val := protoToValue(context.Background(), entry)
 		if val == nil {
 			t.Fatal("expected non-nil value even with invalid data (fallback)")
 		}
@@ -830,7 +830,7 @@ func TestProtoToValue_OnlyCreatedAt(t *testing.T) {
 		Version:   1,
 		CreatedAt: created,
 	}
-	val := protoToValue(entry)
+	val := protoToValue(context.Background(), entry)
 	if val == nil {
 		t.Fatal("expected non-nil value")
 	}
@@ -856,7 +856,7 @@ func TestProtoToValue_OnlyUpdatedAt(t *testing.T) {
 		Version:   2,
 		UpdatedAt: updated,
 	}
-	val := protoToValue(entry)
+	val := protoToValue(context.Background(), entry)
 	if val == nil {
 		t.Fatal("expected non-nil value")
 	}
@@ -877,7 +877,7 @@ func TestProtoToValue_TypeWithoutVersionOrTimestamps(t *testing.T) {
 		Codec:     "json",
 		Type:      int32(config.TypeInt),
 	}
-	val := protoToValue(entry)
+	val := protoToValue(context.Background(), entry)
 	if val == nil {
 		t.Fatal("expected non-nil value")
 	}
@@ -893,7 +893,7 @@ func TestProtoToValue_EmptyValueBytes(t *testing.T) {
 		Value:     []byte{},
 		Codec:     "json",
 	}
-	val := protoToValue(entry)
+	val := protoToValue(context.Background(), entry)
 	// Even with empty bytes, protoToValue should not panic.
 	// It may return a value via fallback or via decoding.
 	// The key property is that it does not return nil (entry is non-nil).
@@ -910,7 +910,7 @@ func TestProtoToValue_VersionOnlyNoTimestamps(t *testing.T) {
 		Codec:     "json",
 		Version:   5,
 	}
-	val := protoToValue(entry)
+	val := protoToValue(context.Background(), entry)
 	if val == nil {
 		t.Fatal("expected non-nil value")
 	}

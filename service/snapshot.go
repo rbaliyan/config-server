@@ -70,7 +70,7 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 
 		results := page.Results()
 		for key, val := range results {
-			entry, err := valueToProto(namespace, key, val)
+			entry, err := valueToProto(ctx, namespace, key, val)
 			if err != nil {
 				return nil, err
 			}
