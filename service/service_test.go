@@ -31,7 +31,7 @@ func setupTestService(t *testing.T) (*Service, config.Store) {
 		store.Close(ctx)
 	})
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -189,39 +189,38 @@ func TestService_List(t *testing.T) {
 	}
 }
 
-func TestService_DenyAllAuthorizer(t *testing.T) {
-	ctx := context.Background()
-	store := memory.NewStore()
-	_ = store.Connect(ctx)
-	defer store.Close(ctx)
+func TestAuthInterceptor_DenyAll(t *testing.T) {
+	guard := DenyAll()
+	interceptor := AuthInterceptor(guard)
 
-	// Service with DenyAll (default)
-	svc, err := NewService(store)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	called := false
+	handler := func(ctx context.Context, req any) (any, error) {
+		called = true
+		return "ok", nil
 	}
 
-	_, err = svc.Get(ctx, &configpb.GetRequest{
-		Namespace: "test",
-		Key:       "key",
-	})
+	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, handler)
 	if err == nil {
-		t.Fatal("expected permission denied")
+		t.Fatal("expected unauthenticated error")
+	}
+	if called {
+		t.Fatal("expected handler not to be called")
 	}
 
 	st, ok := status.FromError(err)
 	if !ok {
 		t.Fatalf("expected gRPC status error, got: %v", err)
 	}
-
-	if st.Code() != codes.PermissionDenied {
-		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got: %v", st.Code())
 	}
 }
 
 func TestService_CheckAccess(t *testing.T) {
-	ctx := context.Background()
 	svc, _ := setupTestService(t)
+
+	// CheckAccess requires identity in context (normally placed by AuthInterceptor).
+	ctx := ContextWithIdentity(context.Background(), anonymousIdentity{})
 
 	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
 		Namespace: "test",
@@ -231,24 +230,18 @@ func TestService_CheckAccess(t *testing.T) {
 	}
 
 	if !resp.CanRead {
-		t.Error("expected CanRead to be true with AllowAll authorizer")
+		t.Error("expected CanRead to be true with AllowAll guard")
 	}
 	if !resp.CanWrite {
-		t.Error("expected CanWrite to be true with AllowAll authorizer")
+		t.Error("expected CanWrite to be true with AllowAll guard")
 	}
 }
 
-func TestService_CheckAccess_DenyAll(t *testing.T) {
+func TestService_CheckAccess_NoIdentity(t *testing.T) {
 	ctx := context.Background()
-	store := memory.NewStore()
-	_ = store.Connect(ctx)
-	defer store.Close(ctx)
+	svc, _ := setupTestService(t)
 
-	svc, err := NewService(store) // DenyAll is default
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-
+	// Without identity in context, CheckAccess returns false for both.
 	resp, err := svc.CheckAccess(ctx, &configpb.CheckAccessRequest{
 		Namespace: "test",
 	})
@@ -257,10 +250,10 @@ func TestService_CheckAccess_DenyAll(t *testing.T) {
 	}
 
 	if resp.CanRead {
-		t.Error("expected CanRead to be false with DenyAll authorizer")
+		t.Error("expected CanRead to be false without identity in context")
 	}
 	if resp.CanWrite {
-		t.Error("expected CanWrite to be false with DenyAll authorizer")
+		t.Error("expected CanWrite to be false without identity in context")
 	}
 }
 
@@ -648,8 +641,8 @@ func TestNewService_WithOptions(t *testing.T) {
 	_ = store.Connect(ctx)
 	defer store.Close(ctx)
 
-	auth := AllowAll()
-	svc, err := NewService(store, WithAuthorizer(auth))
+	guard := AllowAll()
+	svc, err := NewService(store, WithSecurityGuard(guard))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -691,7 +684,7 @@ func TestService_Get_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -715,7 +708,7 @@ func TestService_Set_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -741,7 +734,7 @@ func TestService_Delete_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -765,7 +758,7 @@ func TestService_List_ClosedStore(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -877,7 +870,7 @@ func TestService_Watch_AllowAll(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -920,33 +913,30 @@ func TestService_Watch_AllowAll(t *testing.T) {
 	}
 }
 
-func TestService_Watch_DenyAll(t *testing.T) {
-	ctx := context.Background()
-	store := memory.NewStore()
-	if err := store.Connect(ctx); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer store.Close(ctx)
+func TestStreamAuthInterceptor_DenyAll(t *testing.T) {
+	guard := DenyAll()
+	interceptor := StreamAuthInterceptor(guard)
 
-	svc, err := NewService(store)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	called := false
+	handler := func(srv any, stream grpc.ServerStream) error {
+		called = true
+		return nil
 	}
 
-	stream := &mockWatchServer{ctx: ctx}
-
-	err = svc.Watch(&configpb.WatchRequest{
-		Namespaces: []string{"test"},
-	}, stream)
+	err := interceptor(nil, &mockRateLimitStream{ctx: context.Background()}, &grpc.StreamServerInfo{FullMethod: "/test"}, handler)
 	if err == nil {
-		t.Fatal("expected permission denied error")
+		t.Fatal("expected unauthenticated error")
 	}
+	if called {
+		t.Fatal("expected handler not to be called")
+	}
+
 	st, ok := status.FromError(err)
 	if !ok {
 		t.Fatalf("expected gRPC status error, got: %v", err)
 	}
-	if st.Code() != codes.PermissionDenied {
-		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got: %v", st.Code())
 	}
 }
 
@@ -958,7 +948,7 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -995,31 +985,60 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 	}
 }
 
-func TestService_Watch_NoNamespaces_DenyAll(t *testing.T) {
-	ctx := context.Background()
-	store := memory.NewStore()
-	if err := store.Connect(ctx); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer store.Close(ctx)
+func TestAuthInterceptor_AllowAll(t *testing.T) {
+	guard := AllowAll()
+	interceptor := AuthInterceptor(guard)
 
-	svc, err := NewService(store)
+	called := false
+	handler := func(ctx context.Context, req any) (any, error) {
+		called = true
+		// Verify identity was placed in context
+		id, ok := IdentityFromContext(ctx)
+		if !ok {
+			t.Error("expected identity in context")
+		}
+		if id.UserID() != "anonymous" {
+			t.Errorf("expected anonymous user, got %q", id.UserID())
+		}
+		return "ok", nil
+	}
+
+	resp, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, handler)
 	if err != nil {
-		t.Fatalf("NewService: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected handler to be called")
+	}
+	if resp != "ok" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+}
+
+func TestStreamAuthInterceptor_AllowAll(t *testing.T) {
+	guard := AllowAll()
+	interceptor := StreamAuthInterceptor(guard)
+
+	called := false
+	handler := func(srv any, stream grpc.ServerStream) error {
+		called = true
+		// Verify identity was placed in context
+		id, ok := IdentityFromContext(stream.Context())
+		if !ok {
+			t.Error("expected identity in context")
+		}
+		if id.UserID() != "anonymous" {
+			t.Errorf("expected anonymous user, got %q", id.UserID())
+		}
+		return nil
 	}
 
-	stream := &mockWatchServer{ctx: ctx}
-
-	err = svc.Watch(&configpb.WatchRequest{}, stream)
-	if err == nil {
-		t.Fatal("expected permission denied error")
+	err := interceptor(nil, &mockRateLimitStream{ctx: context.Background()}, &grpc.StreamServerInfo{FullMethod: "/test"}, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected gRPC status error, got: %v", err)
-	}
-	if st.Code() != codes.PermissionDenied {
-		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	if !called {
+		t.Fatal("expected handler to be called")
 	}
 }
 
@@ -1029,7 +1048,7 @@ func TestService_Watch_StoreWatchError(t *testing.T) {
 	_ = store.Connect(ctx)
 	store.Close(ctx) // Close the store so Watch returns an error
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1051,7 +1070,7 @@ func TestService_Watch_ChannelCloses(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1090,7 +1109,7 @@ func TestService_Watch_SendError(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1135,7 +1154,7 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1194,7 +1213,7 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1236,27 +1255,27 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 	}
 }
 
-func TestService_Watch_PartialNamespaceDenied(t *testing.T) {
-	ctx := context.Background()
+// TestServiceDenyingGuard verifies that a service configured with a guard
+// that denies authorization returns PermissionDenied from RPC methods.
+// Auth interceptor authenticates (denyingGuard.Authenticate succeeds);
+// inline authorize in the method calls guard.Authorize which denies.
+func TestServiceDenyingGuard(t *testing.T) {
 	store := memory.NewStore()
-	if err := store.Connect(ctx); err != nil {
-		t.Fatalf("connect: %v", err)
+	if err := store.Connect(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	defer store.Close(ctx)
+	defer store.Close(context.Background())
 
-	auth := &namespaceAuthorizer{allowed: map[string]bool{"allowed": true}}
-	svc, err := NewService(store, WithAuthorizer(auth))
+	svc, err := NewService(store, WithSecurityGuard(&denyingGuard{}))
 	if err != nil {
-		t.Fatalf("NewService: %v", err)
+		t.Fatal(err)
 	}
 
-	stream := &mockWatchServer{ctx: ctx}
-
-	err = svc.Watch(&configpb.WatchRequest{
-		Namespaces: []string{"allowed", "denied"},
-	}, stream)
+	_, err = svc.Get(context.Background(), &configpb.GetRequest{
+		Namespace: "ns", Key: "key",
+	})
 	if err == nil {
-		t.Fatal("expected error when one namespace is denied")
+		t.Fatal("expected permission denied error")
 	}
 	st, ok := status.FromError(err)
 	if !ok {
@@ -1264,6 +1283,24 @@ func TestService_Watch_PartialNamespaceDenied(t *testing.T) {
 	}
 	if st.Code() != codes.PermissionDenied {
 		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	}
+}
+
+func TestIdentityFromContext(t *testing.T) {
+	// No identity in context
+	_, ok := IdentityFromContext(context.Background())
+	if ok {
+		t.Error("expected no identity in empty context")
+	}
+
+	// With identity
+	ctx := ContextWithIdentity(context.Background(), anonymousIdentity{})
+	id, ok := IdentityFromContext(ctx)
+	if !ok {
+		t.Fatal("expected identity in context")
+	}
+	if id.UserID() != "anonymous" {
+		t.Errorf("expected anonymous, got %q", id.UserID())
 	}
 }
 
@@ -1429,7 +1466,7 @@ func TestService_GetVersions_NotSupported(t *testing.T) {
 
 	// Use a store that does NOT implement VersionedStore.
 	store := &unversionedStore{}
-	svc, err := NewService(store, WithAuthorizer(AllowAll()))
+	svc, err := NewService(store, WithSecurityGuard(AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -1447,28 +1484,22 @@ func TestService_GetVersions_NotSupported(t *testing.T) {
 	}
 }
 
-func TestService_GetVersions_Denied(t *testing.T) {
-	ctx := context.Background()
-	store := memory.NewStore()
-	_ = store.Connect(ctx)
-	defer store.Close(ctx)
+func TestAuthInterceptor_DenyAll_ErrorCode(t *testing.T) {
+	guard := DenyAll()
+	interceptor := AuthInterceptor(guard)
 
-	// Service with DenyAll (default)
-	svc, err := NewService(store)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
 
-	_, err = svc.GetVersions(ctx, &configpb.GetVersionsRequest{
-		Namespace: "test",
-		Key:       "key",
-	})
+	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/config.v1.ConfigService/GetVersions"}, handler)
 	if err == nil {
-		t.Fatal("expected permission denied")
+		t.Fatal("expected error")
 	}
 	st, _ := status.FromError(err)
-	if st.Code() != codes.PermissionDenied {
-		t.Errorf("expected PermissionDenied, got: %v", st.Code())
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got: %v", st.Code())
 	}
 }
 
@@ -1590,16 +1621,13 @@ func (s *unversionedStore) Watch(context.Context, config.WatchFilter) (<-chan co
 	return nil, nil
 }
 
-type namespaceAuthorizer struct {
-	allowed map[string]bool
+// denyingGuard authenticates successfully but denies all actions.
+type denyingGuard struct{}
+
+func (denyingGuard) Authenticate(context.Context) (Identity, error) {
+	return anonymousIdentity{}, nil
 }
 
-func (a *namespaceAuthorizer) Authorize(_ context.Context, req AuthRequest) error {
-	if req.Namespace == "" {
-		return status.Errorf(codes.PermissionDenied, "wildcard not allowed")
-	}
-	if a.allowed[req.Namespace] {
-		return nil
-	}
-	return status.Errorf(codes.PermissionDenied, "namespace %q not allowed", req.Namespace)
+func (denyingGuard) Authorize(context.Context, Identity, string, Resource) (Decision, error) {
+	return Decision{Allowed: false, Reason: "denied by test guard"}, nil
 }

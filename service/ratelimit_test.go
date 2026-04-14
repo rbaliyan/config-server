@@ -112,7 +112,7 @@ func TestTokenBucketLimiter_CleanupStaleEntries(t *testing.T) {
 	limiter := NewTokenBucketLimiter(
 		WithRate(10),
 		WithBurst(10),
-		WithCleanupInterval(50 * time.Millisecond),
+		WithCleanupInterval(50*time.Millisecond),
 	)
 	defer limiter.Close()
 
@@ -145,7 +145,7 @@ func TestTokenBucketLimiter_CloseStopsCleanup(t *testing.T) {
 	limiter := NewTokenBucketLimiter(
 		WithRate(10),
 		WithBurst(10),
-		WithCleanupInterval(10 * time.Millisecond),
+		WithCleanupInterval(10*time.Millisecond),
 	)
 
 	// Close should return promptly (cleanup goroutine exits)

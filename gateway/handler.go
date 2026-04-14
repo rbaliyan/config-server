@@ -107,7 +107,7 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 //
 // Example:
 //
-//	svc := service.NewService(store, service.WithAuthorizer(auth))
+//	svc := service.NewService(store, service.WithSecurityGuard(guard))
 //	handler, _ := gateway.NewInProcessHandler(ctx, svc)
 //	http.Handle("/api/", http.StripPrefix("/api", handler))
 func NewInProcessHandler(ctx context.Context, svc configpb.ConfigServiceServer, opts ...Option) (*Handler, error) {

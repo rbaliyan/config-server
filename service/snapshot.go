@@ -18,11 +18,7 @@ func (s *Service) Snapshot(ctx context.Context, req *configpb.SnapshotRequest) (
 	if req.Namespace == "" {
 		return nil, status.Error(codes.InvalidArgument, "namespace is required")
 	}
-
-	if err := s.authorizer.Authorize(ctx, AuthRequest{
-		Namespace: req.Namespace,
-		Operation: OperationRead,
-	}); err != nil {
+	if err := s.authorize(ctx, "read", Resource{Namespace: req.Namespace}); err != nil {
 		return nil, err
 	}
 

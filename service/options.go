@@ -2,7 +2,7 @@ package service
 
 // serviceOptions holds configuration for the Service.
 type serviceOptions struct {
-	authorizer         Authorizer
+	guard              SecurityGuard
 	maxSnapshotEntries int
 	maxValueSize       int
 	maxWatchFilters    int
@@ -11,12 +11,12 @@ type serviceOptions struct {
 // Option configures the Service.
 type Option func(*serviceOptions)
 
-// WithAuthorizer sets the authorizer for the service.
-// If a is nil, the option is ignored and the default DenyAll authorizer is kept.
-func WithAuthorizer(a Authorizer) Option {
+// WithSecurityGuard sets the security guard for the service.
+// If g is nil, the option is ignored and the default DenyAll guard is kept.
+func WithSecurityGuard(g SecurityGuard) Option {
 	return func(o *serviceOptions) {
-		if a != nil {
-			o.authorizer = a
+		if g != nil {
+			o.guard = g
 		}
 	}
 }

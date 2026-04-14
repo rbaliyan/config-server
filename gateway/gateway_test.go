@@ -32,7 +32,7 @@ func TestNewInProcessHandler(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestNewInProcessHandler_WithOptions(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestNewInProcessHandler_ServeHTTP(t *testing.T) {
 		t.Fatalf("failed to seed test data: %v", err)
 	}
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestNewInProcessHandler_NotFound(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestNewInProcessHandler_InvalidRoute(t *testing.T) {
 	}
 	defer store.Close(ctx)
 
-	svc, err := service.NewService(store, service.WithAuthorizer(service.AllowAll()))
+	svc, err := service.NewService(store, service.WithSecurityGuard(service.AllowAll()))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}

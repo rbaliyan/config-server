@@ -73,3 +73,44 @@ func StreamRecoveryInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor
 		return handler(srv, ss)
 	}
 }
+
+// AuthInterceptor returns a unary interceptor that authenticates requests
+// using the provided SecurityGuard. On success the Identity is stored in
+// the context for downstream use by RPC methods (which call
+// guard.Authorize with the specific Resource). On authentication failure
+// the request is rejected with codes.Unauthenticated.
+func AuthInterceptor(guard SecurityGuard) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		id, err := guard.Authenticate(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ctx = ContextWithIdentity(ctx, id)
+		return handler(ctx, req)
+	}
+}
+
+// StreamAuthInterceptor returns a stream interceptor that authenticates
+// requests using the provided SecurityGuard.
+func StreamAuthInterceptor(guard SecurityGuard) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		id, err := guard.Authenticate(ctx)
+		if err != nil {
+			return err
+		}
+		ctx = ContextWithIdentity(ctx, id)
+		wrapped := &wrappedServerStream{ServerStream: ss, ctx: ctx}
+		return handler(srv, wrapped)
+	}
+}
+
+// wrappedServerStream overrides the context on a grpc.ServerStream.
+type wrappedServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *wrappedServerStream) Context() context.Context {
+	return w.ctx
+}
