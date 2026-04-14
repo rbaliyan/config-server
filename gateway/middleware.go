@@ -23,7 +23,7 @@ func AuthMiddleware(guard service.SecurityGuard) func(http.Handler) http.Handler
 			}
 
 			action := fmt.Sprintf("%s:%s", r.Method, r.URL.Path)
-			decision, err := guard.Authorize(ctx, id, action)
+			decision, err := guard.Authorize(ctx, id, action, service.Resource{})
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return

@@ -108,7 +108,7 @@ func (g *namespaceGuard) Authenticate(ctx context.Context) (service.Identity, er
 	return &roleIdentity{role: roles[0]}, nil
 }
 
-func (g *namespaceGuard) Authorize(_ context.Context, id service.Identity, _ string) (service.Decision, error) {
+func (g *namespaceGuard) Authorize(_ context.Context, id service.Identity, _ string, _ service.Resource) (service.Decision, error) {
 	role := id.(*roleIdentity).role
 	if _, ok := g.allowed[role]; !ok {
 		return service.Decision{

@@ -21,13 +21,22 @@ type Decision struct {
 	Reason  string
 }
 
+// Resource identifies the config resource being accessed. Empty fields mean
+// the check is method-level only (e.g. ListAliases has no namespace or key).
+type Resource struct {
+	Namespace string
+	Key       string
+}
+
 // SecurityGuard handles both authentication and authorization.
 type SecurityGuard interface {
 	// Authenticate extracts and validates the caller's identity from the context.
 	Authenticate(ctx context.Context) (Identity, error)
 
-	// Authorize checks whether the identified caller may perform the given action.
-	Authorize(ctx context.Context, id Identity, action string) (Decision, error)
+	// Authorize checks whether the identified caller may perform the given action
+	// on the given resource. Action is one of "read", "write", "delete", "list",
+	// "watch". Resource carries the namespace and/or key when known.
+	Authorize(ctx context.Context, id Identity, action string, resource Resource) (Decision, error)
 }
 
 type identityKey struct{}
@@ -55,7 +64,7 @@ func (allowAllGuard) Authenticate(context.Context) (Identity, error) {
 	return anonymousIdentity{}, nil
 }
 
-func (allowAllGuard) Authorize(context.Context, Identity, string) (Decision, error) {
+func (allowAllGuard) Authorize(context.Context, Identity, string, Resource) (Decision, error) {
 	return Decision{Allowed: true}, nil
 }
 
@@ -71,7 +80,7 @@ func (denyAllGuard) Authenticate(context.Context) (Identity, error) {
 	return nil, status.Errorf(codes.Unauthenticated, "no security guard configured")
 }
 
-func (denyAllGuard) Authorize(context.Context, Identity, string) (Decision, error) {
+func (denyAllGuard) Authorize(context.Context, Identity, string, Resource) (Decision, error) {
 	return Decision{Allowed: false, Reason: "no security guard configured"}, nil
 }
 

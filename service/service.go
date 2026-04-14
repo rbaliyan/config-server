@@ -44,6 +44,29 @@ func NewService(store config.Store, opts ...Option) (*Service, error) {
 	}, nil
 }
 
+// authorize extracts the Identity from ctx (placed there by AuthInterceptor)
+// and calls the guard. If no Identity is in the context (e.g. tests calling
+// methods directly without the interceptor), it falls back to
+// guard.Authenticate to obtain one.
+func (s *Service) authorize(ctx context.Context, action string, resource Resource) error {
+	id, ok := IdentityFromContext(ctx)
+	if !ok {
+		var err error
+		id, err = s.guard.Authenticate(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	decision, err := s.guard.Authorize(ctx, id, action, resource)
+	if err != nil {
+		return status.Errorf(codes.Internal, "authorization error: %v", err)
+	}
+	if !decision.Allowed {
+		return status.Errorf(codes.PermissionDenied, "%s", decision.Reason)
+	}
+	return nil
+}
+
 // validateNamespaceKey checks that namespace and key are non-empty.
 func validateNamespaceKey(namespace, key string) error {
 	if namespace == "" {
@@ -58,6 +81,9 @@ func validateNamespaceKey(namespace, key string) error {
 // Get retrieves a configuration value by namespace and key.
 func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.GetResponse, error) {
 	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, "read", Resource{Namespace: req.Namespace, Key: req.Key}); err != nil {
 		return nil, err
 	}
 
@@ -79,6 +105,9 @@ func (s *Service) Get(ctx context.Context, req *configpb.GetRequest) (*configpb.
 // Set creates or updates a configuration value.
 func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.SetResponse, error) {
 	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, "write", Resource{Namespace: req.Namespace, Key: req.Key}); err != nil {
 		return nil, err
 	}
 
@@ -132,6 +161,9 @@ func (s *Service) Delete(ctx context.Context, req *configpb.DeleteRequest) (*con
 	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
 		return nil, err
 	}
+	if err := s.authorize(ctx, "delete", Resource{Namespace: req.Namespace, Key: req.Key}); err != nil {
+		return nil, err
+	}
 
 	if err := s.store.Delete(ctx, req.Namespace, req.Key); err != nil {
 		return nil, toGRPCError(err)
@@ -144,6 +176,9 @@ func (s *Service) Delete(ctx context.Context, req *configpb.DeleteRequest) (*con
 func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configpb.ListResponse, error) {
 	if req.Namespace == "" {
 		return nil, status.Error(codes.InvalidArgument, "namespace is required")
+	}
+	if err := s.authorize(ctx, "list", Resource{Namespace: req.Namespace}); err != nil {
+		return nil, err
 	}
 
 	fb := config.NewFilter()
@@ -180,6 +215,9 @@ func (s *Service) List(ctx context.Context, req *configpb.ListRequest) (*configp
 // GetVersions retrieves version history for a configuration key.
 func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequest) (*configpb.GetVersionsResponse, error) {
 	if err := validateNamespaceKey(req.Namespace, req.Key); err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, "read", Resource{Namespace: req.Namespace, Key: req.Key}); err != nil {
 		return nil, err
 	}
 
@@ -223,6 +261,19 @@ func (s *Service) GetVersions(ctx context.Context, req *configpb.GetVersionsRequ
 // Watch streams configuration changes in real-time.
 func (s *Service) Watch(req *configpb.WatchRequest, stream configpb.ConfigService_WatchServer) error {
 	ctx := stream.Context()
+
+	// Authorize watch for each requested namespace, or wildcard if none specified.
+	if len(req.Namespaces) == 0 {
+		if err := s.authorize(ctx, "watch", Resource{}); err != nil {
+			return err
+		}
+	} else {
+		for _, ns := range req.Namespaces {
+			if err := s.authorize(ctx, "watch", Resource{Namespace: ns}); err != nil {
+				return err
+			}
+		}
+	}
 
 	if len(req.Namespaces) > s.opts.maxWatchFilters {
 		return status.Errorf(codes.InvalidArgument, "too many namespaces (max %d, got %d)", s.opts.maxWatchFilters, len(req.Namespaces))
@@ -294,17 +345,14 @@ func (s *Service) CheckAccess(ctx context.Context, req *configpb.CheckAccessRequ
 
 	id, ok := IdentityFromContext(ctx)
 	if !ok {
-		// No identity in context means interceptor was not used or auth was skipped.
 		return resp, nil
 	}
 
-	// Check read access
-	if decision, err := s.guard.Authorize(ctx, id, "/config.v1.ConfigService/Get"); err == nil && decision.Allowed {
+	resource := Resource{Namespace: req.Namespace}
+	if decision, err := s.guard.Authorize(ctx, id, "read", resource); err == nil && decision.Allowed {
 		resp.CanRead = true
 	}
-
-	// Check write access
-	if decision, err := s.guard.Authorize(ctx, id, "/config.v1.ConfigService/Set"); err == nil && decision.Allowed {
+	if decision, err := s.guard.Authorize(ctx, id, "write", resource); err == nil && decision.Allowed {
 		resp.CanWrite = true
 	}
 
@@ -318,6 +366,10 @@ func (s *Service) SetAlias(ctx context.Context, req *configpb.SetAliasRequest) (
 	}
 	if req.Target == "" {
 		return nil, status.Error(codes.InvalidArgument, "target is required")
+	}
+
+	if err := s.authorize(ctx, "write", Resource{Key: req.Alias}); err != nil {
+		return nil, err
 	}
 
 	as, ok := s.store.(config.AliasStore)
@@ -340,6 +392,9 @@ func (s *Service) DeleteAlias(ctx context.Context, req *configpb.DeleteAliasRequ
 	if req.Alias == "" {
 		return nil, status.Error(codes.InvalidArgument, "alias is required")
 	}
+	if err := s.authorize(ctx, "delete", Resource{Key: req.Alias}); err != nil {
+		return nil, err
+	}
 
 	as, ok := s.store.(config.AliasStore)
 	if !ok {
@@ -357,6 +412,9 @@ func (s *Service) DeleteAlias(ctx context.Context, req *configpb.DeleteAliasRequ
 func (s *Service) GetAlias(ctx context.Context, req *configpb.GetAliasRequest) (*configpb.GetAliasResponse, error) {
 	if req.Alias == "" {
 		return nil, status.Error(codes.InvalidArgument, "alias is required")
+	}
+	if err := s.authorize(ctx, "read", Resource{Key: req.Alias}); err != nil {
+		return nil, err
 	}
 
 	as, ok := s.store.(config.AliasStore)
@@ -377,6 +435,10 @@ func (s *Service) GetAlias(ctx context.Context, req *configpb.GetAliasRequest) (
 
 // ListAliases returns all registered aliases.
 func (s *Service) ListAliases(ctx context.Context, req *configpb.ListAliasesRequest) (*configpb.ListAliasesResponse, error) {
+	if err := s.authorize(ctx, "list", Resource{}); err != nil {
+		return nil, err
+	}
+
 	as, ok := s.store.(config.AliasStore)
 	if !ok {
 		return nil, status.Error(codes.Unimplemented, "store does not support aliases")

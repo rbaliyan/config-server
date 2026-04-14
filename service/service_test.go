@@ -1255,24 +1255,28 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 	}
 }
 
-func TestAuthInterceptor_PermissionDenied(t *testing.T) {
-	guard := &denyingGuard{}
-	interceptor := AuthInterceptor(guard)
+// TestServiceDenyingGuard verifies that a service configured with a guard
+// that denies authorization returns PermissionDenied from RPC methods.
+// Auth interceptor authenticates (denyingGuard.Authenticate succeeds);
+// inline authorize in the method calls guard.Authorize which denies.
+func TestServiceDenyingGuard(t *testing.T) {
+	store := memory.NewStore()
+	if err := store.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close(context.Background())
 
-	called := false
-	handler := func(ctx context.Context, req any) (any, error) {
-		called = true
-		return "ok", nil
+	svc, err := NewService(store, WithSecurityGuard(&denyingGuard{}))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/test"}, handler)
+	_, err = svc.Get(context.Background(), &configpb.GetRequest{
+		Namespace: "ns", Key: "key",
+	})
 	if err == nil {
 		t.Fatal("expected permission denied error")
 	}
-	if called {
-		t.Fatal("expected handler not to be called")
-	}
-
 	st, ok := status.FromError(err)
 	if !ok {
 		t.Fatalf("expected gRPC status error, got: %v", err)
@@ -1624,6 +1628,6 @@ func (denyingGuard) Authenticate(context.Context) (Identity, error) {
 	return anonymousIdentity{}, nil
 }
 
-func (denyingGuard) Authorize(context.Context, Identity, string) (Decision, error) {
+func (denyingGuard) Authorize(context.Context, Identity, string, Resource) (Decision, error) {
 	return Decision{Allowed: false, Reason: "denied by test guard"}, nil
 }
