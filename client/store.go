@@ -342,7 +342,7 @@ func (s *RemoteStore) Get(ctx context.Context, namespace, key string) (config.Va
 		if err != nil {
 			return fromGRPCError(err)
 		}
-		result = protoToValue(resp.Entry)
+		result = protoToValue(ctx, resp.Entry)
 		return nil
 	})
 	return result, err
@@ -350,7 +350,7 @@ func (s *RemoteStore) Get(ctx context.Context, namespace, key string) (config.Va
 
 // Set creates or updates a configuration value.
 func (s *RemoteStore) Set(ctx context.Context, namespace, key string, value config.Value) (config.Value, error) {
-	data, err := value.Marshal()
+	data, err := value.Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ func (s *RemoteStore) Set(ctx context.Context, namespace, key string, value conf
 		if err != nil {
 			return fromGRPCError(err)
 		}
-		result = protoToValue(resp.Entry)
+		result = protoToValue(ctx, resp.Entry)
 		return nil
 	})
 	return result, err
@@ -425,7 +425,7 @@ func (s *RemoteStore) Find(ctx context.Context, namespace string, filter config.
 
 		results := make(map[string]config.Value, len(resp.Entries))
 		for _, e := range resp.Entries {
-			results[e.Key] = protoToValue(e)
+			results[e.Key] = protoToValue(ctx, e)
 		}
 
 		result = config.NewPage(results, resp.NextCursor, filter.Limit())
@@ -461,7 +461,7 @@ func (s *RemoteStore) GetVersions(ctx context.Context, namespace, key string, fi
 
 		versions := make([]config.Value, 0, len(resp.Entries))
 		for _, e := range resp.Entries {
-			versions = append(versions, protoToValue(e))
+			versions = append(versions, protoToValue(ctx, e))
 		}
 
 		result = config.NewVersionPage(versions, resp.NextCursor, int(resp.Limit))
@@ -521,7 +521,7 @@ func (s *RemoteStore) Snapshot(ctx context.Context, namespace string, opts ...Sn
 
 		entries := make(map[string]config.Value, len(resp.Entries))
 		for _, e := range resp.Entries {
-			entries[e.Key] = protoToValue(e)
+			entries[e.Key] = protoToValue(ctx, e)
 		}
 
 		result = &SnapshotResult{
@@ -721,12 +721,12 @@ func (s *RemoteStore) watchStream(
 		switch resp.Type {
 		case configpb.ChangeType_CHANGE_TYPE_SET:
 			event.Type = config.ChangeTypeSet
-			event.Value = protoToValue(resp.Entry)
+			event.Value = protoToValue(ctx, resp.Entry)
 		case configpb.ChangeType_CHANGE_TYPE_DELETE:
 			event.Type = config.ChangeTypeDelete
 		case configpb.ChangeType_CHANGE_TYPE_ALIAS_SET:
 			event.Type = config.ChangeTypeAliasSet
-			event.Value = protoToValue(resp.Entry)
+			event.Value = protoToValue(ctx, resp.Entry)
 		case configpb.ChangeType_CHANGE_TYPE_ALIAS_DELETE:
 			event.Type = config.ChangeTypeAliasDelete
 		default:
@@ -849,7 +849,7 @@ func aliasProtoToValue(a *configpb.Alias) config.Value {
 }
 
 // protoToValue converts a proto Entry to a config.Value.
-func protoToValue(entry *configpb.Entry) config.Value {
+func protoToValue(ctx context.Context, entry *configpb.Entry) config.Value {
 	if entry == nil {
 		return nil
 	}
@@ -873,7 +873,7 @@ func protoToValue(entry *configpb.Entry) config.Value {
 		opts = append(opts, config.WithValueType(config.Type(entry.Type)))
 	}
 
-	val, err := config.NewValueFromBytes(entry.Value, entry.Codec, opts...)
+	val, err := config.NewValueFromBytes(ctx, entry.Value, entry.Codec, opts...)
 	if err != nil {
 		// Fallback: create value without decoding
 		return config.NewValue(entry.Value, opts...)

@@ -466,7 +466,7 @@ func TestToGRPCError(t *testing.T) {
 
 func TestValueToProto(t *testing.T) {
 	t.Run("nil value", func(t *testing.T) {
-		entry, err := valueToProto("ns", "key", nil)
+		entry, err := valueToProto(context.Background(), "ns", "key", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -480,7 +480,7 @@ func TestValueToProto(t *testing.T) {
 
 	t.Run("with value", func(t *testing.T) {
 		val := config.NewValue("hello", config.WithValueType(config.TypeString))
-		entry, err := valueToProto("ns", "key", val)
+		entry, err := valueToProto(context.Background(), "ns", "key", val)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1574,9 +1574,11 @@ func TestService_Snapshot_Empty(t *testing.T) {
 // config.VersionedStore, used to test the Unimplemented error path.
 type unversionedStore struct{}
 
-func (s *unversionedStore) Connect(context.Context) error                            { return nil }
-func (s *unversionedStore) Close(context.Context) error                              { return nil }
-func (s *unversionedStore) Get(context.Context, string, string) (config.Value, error) { return nil, nil }
+func (s *unversionedStore) Connect(context.Context) error { return nil }
+func (s *unversionedStore) Close(context.Context) error   { return nil }
+func (s *unversionedStore) Get(context.Context, string, string) (config.Value, error) {
+	return nil, nil
+}
 func (s *unversionedStore) Set(context.Context, string, string, config.Value) (config.Value, error) {
 	return nil, nil
 }
