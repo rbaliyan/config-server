@@ -1,4 +1,27 @@
-// Package gateway provides an HTTP handler for the ConfigService using gRPC-Gateway.
+// Package gateway provides an HTTP/JSON handler for the ConfigService,
+// built on grpc-gateway and layered with custom handlers for features
+// that do not fit the standard gRPC-Gateway mapping.
+//
+// Surface area:
+//   - Auto-generated REST routes (Get/Set/Delete/List/GetVersions/CheckAccess)
+//     mapped from the proto HTTP annotations.
+//   - Server-Sent Events (SSE) endpoint at /v1/watch for browser-friendly
+//     Watch with automatic reconnection. Events carry monotonically
+//     increasing id: lines, and the handler maintains an in-memory ring
+//     buffer (see WithEventBufferSize) so clients reconnecting with the
+//     Last-Event-ID HTTP header receive missed events before the live
+//     stream resumes.
+//   - Version diff endpoint at /v1/namespaces/{namespace}/keys/{key}/diff
+//     that returns both versions' raw bytes and codecs plus a changed flag.
+//   - Optional embedded dashboard web UI at /dashboard/ via WithDashboard
+//     (mount path configurable via WithDashboardPath).
+//
+// Two constructors are provided:
+//   - NewHandler dials a remote gRPC backend.
+//   - NewInProcessHandler calls the service directly without a network hop.
+//
+// Both accept the same Option set; the event ring buffer and dashboard are
+// per-handler and per-process.
 package gateway
 
 import (
@@ -8,6 +31,7 @@ import (
 	"sync"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/rbaliyan/config-server/dashboard"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"google.golang.org/grpc"
 )
@@ -79,11 +103,23 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 		heartbeat = defaultHeartbeatInterval
 	}
 
+	buf := newEventBuffer(resolveEventBufferSize(o.eventBufferSize))
+
 	client := configpb.NewConfigServiceClient(conn)
-	sseHandler := newRemoteSSEHandler(client, heartbeat)
+	sseHandler := newRemoteSSEHandler(client, heartbeat, buf)
+	diffHandler := newRemoteDiffHandler(client)
+
+	dashPath := o.dashboardPath
+	if dashPath == "" {
+		dashPath = defaultDashboardPath
+	}
+	var dashHandler http.Handler
+	if o.dashboardEnabled {
+		dashHandler = dashboard.Handler(dashPath, "")
+	}
 
 	h := &Handler{
-		Handler: composeHandlers(mux, sseHandler),
+		Handler: composeHandlers(mux, sseHandler, diffHandler, dashHandler, dashPath),
 		conn:    conn,
 		done:    make(chan struct{}),
 	}
@@ -128,10 +164,22 @@ func NewInProcessHandler(ctx context.Context, svc configpb.ConfigServiceServer, 
 		heartbeat = defaultHeartbeatInterval
 	}
 
-	sseHandler := newInProcessSSEHandler(svc, heartbeat)
+	buf := newEventBuffer(resolveEventBufferSize(o.eventBufferSize))
+
+	sseHandler := newInProcessSSEHandler(svc, heartbeat, buf)
+	diffHandler := newInProcessDiffHandler(svc)
+
+	dashPath := o.dashboardPath
+	if dashPath == "" {
+		dashPath = defaultDashboardPath
+	}
+	var dashHandler http.Handler
+	if o.dashboardEnabled {
+		dashHandler = dashboard.Handler(dashPath, "")
+	}
 
 	return &Handler{
-		Handler: composeHandlers(mux, sseHandler),
+		Handler: composeHandlers(mux, sseHandler, diffHandler, dashHandler, dashPath),
 		done:    make(chan struct{}),
 	}, nil
 }

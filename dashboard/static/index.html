@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta id="api-base" content="">
+  <title>Config Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <span class="app-title">Config Dashboard</span>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <label class="sidebar-label" for="ns-input">Namespace</label>
+        <div class="ns-row">
+          <input id="ns-input" class="input" type="text" placeholder="my-app" autocomplete="off">
+          <button id="load-btn" class="btn btn-primary">Load</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="sidebar-hint">Enter a namespace and press Load to browse its keys.</p>
+      </div>
+
+      <div class="sidebar-section recent-section" id="recent-section" style="display:none">
+        <label class="sidebar-label">Recent</label>
+        <ul id="recent-list" class="recent-list"></ul>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <div id="ns-header" class="ns-header" style="display:none">
+        <h2 id="ns-title" class="ns-title"></h2>
+        <span id="key-count" class="key-count"></span>
+      </div>
+
+      <div id="empty-state" class="empty-state">
+        <p>Enter a namespace in the sidebar and click Load.</p>
+      </div>
+
+      <div id="table-wrapper" style="display:none">
+        <table class="keys-table">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+              <th>Codec</th>
+              <th>Version</th>
+              <th>Updated</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="keys-table-body"></tbody>
+        </table>
+
+        <div class="table-footer">
+          <button id="load-more" class="btn btn-secondary" style="display:none">Load more</button>
+        </div>
+      </div>
+
+      <!-- Create / Edit form -->
+      <section class="create-section" id="create-section" style="display:none">
+        <h3 class="create-title">Add / Update Key</h3>
+        <form id="create-form" class="create-form" autocomplete="off">
+          <div class="form-row">
+            <label class="form-label" for="form-key">Key</label>
+            <input id="form-key" class="input" type="text" placeholder="config.key" required>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="form-codec">Codec</label>
+            <select id="form-codec" class="input">
+              <option value="json">json</option>
+              <option value="yaml">yaml</option>
+              <option value="toml">toml</option>
+              <option value="raw">raw</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="form-value">Value (plain text)</label>
+            <textarea id="form-value" class="input textarea" rows="4" placeholder='{"key":"value"}'></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Edit modal -->
+  <div id="edit-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
+    <div class="modal">
+      <h3 id="modal-heading" class="modal-title">Edit Key</h3>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="form-label">Namespace</label>
+          <input id="edit-ns" class="input" type="text" readonly>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Key</label>
+          <input id="edit-key" class="input" type="text" readonly>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="edit-codec">Codec</label>
+          <select id="edit-codec" class="input">
+            <option value="json">json</option>
+            <option value="yaml">yaml</option>
+            <option value="toml">toml</option>
+            <option value="raw">raw</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="edit-value">Value (plain text)</label>
+          <textarea id="edit-value" class="input textarea" rows="6"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="edit-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="edit-save" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" aria-live="polite" style="display:none"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
