@@ -287,7 +287,7 @@ func fetchBundle(ctx context.Context, url string, tlsCfg *tls.Config) (string, e
 	}
 	client := &http.Client{Transport: transport}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil) // #nosec G107 -- URL is operator-supplied configuration, not user input
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
