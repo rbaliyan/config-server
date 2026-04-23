@@ -356,7 +356,7 @@ func TestSSEWatch_QueryParams(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet,
 		"/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/&prefixes=db/", nil)
 
-	req, err := parseWatchQuery(r)
+	req, _, err := parseWatchQuery(r)
 	if err != nil {
 		t.Fatalf("parseWatchQuery failed: %v", err)
 	}
@@ -748,8 +748,8 @@ func TestSSEWatch_Remote_ClosedConn(t *testing.T) {
 	}
 
 	client := configpb.NewConfigServiceClient(conn)
-	sseHandler := newRemoteSSEHandler(client, 30*time.Second)
-	handler := composeHandlers(http.NewServeMux(), sseHandler)
+	sseHandler := newRemoteSSEHandler(client, 30*time.Second, newEventBuffer(defaultEventBufferSize))
+	handler := composeHandlers(http.NewServeMux(), sseHandler, http.NotFoundHandler(), nil, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
 	rec := httptest.NewRecorder()
@@ -1201,7 +1201,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 			fmt.Fprintf(&b, "namespaces=ns%d", i)
 		}
 		r := httptest.NewRequest(http.MethodGet, b.String(), nil)
-		_, err := parseWatchQuery(r)
+		_, _, err := parseWatchQuery(r)
 		if err == nil {
 			t.Fatal("expected error for too many namespaces")
 		}
@@ -1220,7 +1220,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 			fmt.Fprintf(&b, "prefixes=p%d", i)
 		}
 		r := httptest.NewRequest(http.MethodGet, b.String(), nil)
-		_, err := parseWatchQuery(r)
+		_, _, err := parseWatchQuery(r)
 		if err == nil {
 			t.Fatal("expected error for too many prefixes")
 		}
@@ -1229,7 +1229,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 	t.Run("namespace_too_long", func(t *testing.T) {
 		longNS := strings.Repeat("a", maxParamValueLen+1)
 		r := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces="+longNS, nil)
-		_, err := parseWatchQuery(r)
+		_, _, err := parseWatchQuery(r)
 		if err == nil {
 			t.Fatal("expected error for namespace too long")
 		}
@@ -1241,7 +1241,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 	t.Run("prefix_too_long", func(t *testing.T) {
 		longPF := strings.Repeat("b", maxParamValueLen+1)
 		r := httptest.NewRequest(http.MethodGet, "/v1/watch?prefixes="+longPF, nil)
-		_, err := parseWatchQuery(r)
+		_, _, err := parseWatchQuery(r)
 		if err == nil {
 			t.Fatal("expected error for prefix too long")
 		}
@@ -1249,7 +1249,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 
 	t.Run("valid_within_limits", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=ns1&prefixes=p1", nil)
-		req, err := parseWatchQuery(r)
+		req, _, err := parseWatchQuery(r)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1260,7 +1260,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 
 	t.Run("empty_params_valid", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/v1/watch", nil)
-		req, err := parseWatchQuery(r)
+		req, _, err := parseWatchQuery(r)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

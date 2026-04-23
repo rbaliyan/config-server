@@ -41,10 +41,16 @@ type sseWriter struct {
 // writeEvent writes an SSE event frame. The eventType is sanitized to prevent
 // frame injection. If data contains newlines, it is split into multiple
 // "data:" lines per the SSE specification (though json.Marshal, the only
-// current encoder, guarantees single-line output).
-func (sw *sseWriter) writeEvent(eventType string, data []byte) error {
+// current encoder, guarantees single-line output). If id is non-empty, an
+// "id:" line is written before the "event:" line per the SSE specification.
+func (sw *sseWriter) writeEvent(eventType, id string, data []byte) error {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
+	if id != "" {
+		if _, err := fmt.Fprintf(sw.w, "id: %s\n", sanitizeSSEField(id)); err != nil {
+			return err
+		}
+	}
 	eventType = sanitizeSSEField(eventType)
 	if _, err := fmt.Fprintf(sw.w, "event: %s\n", eventType); err != nil {
 		return err
@@ -90,6 +96,7 @@ type sseWatchStream struct {
 	grpc.ServerStream
 	ctx context.Context
 	sw  *sseWriter
+	buf *eventBuffer
 }
 
 func (s *sseWatchStream) Context() context.Context {
@@ -97,12 +104,16 @@ func (s *sseWatchStream) Context() context.Context {
 }
 
 func (s *sseWatchStream) Send(resp *configpb.WatchResponse) error {
-	return sendSSEResponse(s.sw, resp)
+	id := ""
+	if s.buf != nil {
+		id = s.buf.push(resp)
+	}
+	return sendSSEResponse(s.sw, resp, id)
 }
 
 // sendSSEResponse converts a WatchResponse to an SSE event and writes it.
 // Used by both the in-process stream adapter and the remote relay loop.
-func sendSSEResponse(sw *sseWriter, resp *configpb.WatchResponse) error {
+func sendSSEResponse(sw *sseWriter, resp *configpb.WatchResponse, id string) error {
 	evt := responseToSSEEvent(resp)
 
 	data, err := json.Marshal(evt)
@@ -110,7 +121,7 @@ func sendSSEResponse(sw *sseWriter, resp *configpb.WatchResponse) error {
 		return fmt.Errorf("marshal SSE event: %w", err)
 	}
 
-	return sw.writeEvent(strings.ToLower(evt.Type), data)
+	return sw.writeEvent(strings.ToLower(evt.Type), id, data)
 }
 
 // No-op stubs to satisfy grpc.ServerStream. The SSE adapter only uses
@@ -191,7 +202,7 @@ func writeStreamPreamble(sw *sseWriter) error {
 // block on 401/403, or monitoring that alerts on error rates) should account
 // for the fact that auth failures on SSE streams produce a 200 status with an
 // error event payload rather than a 4xx HTTP status code.
-func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Duration) http.Handler {
+func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Duration, buf *eventBuffer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -199,7 +210,7 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 			return
 		}
 
-		req, err := parseWatchQuery(r)
+		req, lastEventID, err := parseWatchQuery(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -220,9 +231,16 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 			return
 		}
 
+		for _, ev := range buf.since(lastEventID) {
+			if err := sendSSEResponse(sw, ev.resp, ev.id); err != nil {
+				return
+			}
+		}
+
 		stream := &sseWatchStream{
 			ctx: ctx,
 			sw:  sw,
+			buf: buf,
 		}
 
 		// Start heartbeat goroutine and ensure it exits before the
@@ -248,7 +266,7 @@ func newInProcessSSEHandler(svc configpb.ConfigServiceServer, heartbeat time.Dur
 
 // newRemoteSSEHandler creates an HTTP handler that calls client.Watch
 // over a gRPC connection and relays responses as SSE events.
-func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Duration) http.Handler {
+func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Duration, buf *eventBuffer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -256,7 +274,7 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 			return
 		}
 
-		req, err := parseWatchQuery(r)
+		req, lastEventID, err := parseWatchQuery(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -279,6 +297,12 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 			return
 		}
 
+		for _, ev := range buf.since(lastEventID) {
+			if err := sendSSEResponse(sw, ev.resp, ev.id); err != nil {
+				return
+			}
+		}
+
 		// Start heartbeat goroutine and ensure it exits before the
 		// handler returns, preventing writes to a recycled ResponseWriter.
 		hbDone := make(chan struct{})
@@ -298,7 +322,8 @@ func newRemoteSSEHandler(client configpb.ConfigServiceClient, heartbeat time.Dur
 				break
 			}
 
-			if err := sendSSEResponse(sw, resp); err != nil {
+			id := buf.push(resp)
+			if err := sendSSEResponse(sw, resp, id); err != nil {
 				break
 			}
 		}
@@ -313,34 +338,36 @@ const (
 	maxParamValueLen = 256 // max length of a single parameter value
 )
 
-// parseWatchQuery extracts namespaces and prefixes from query parameters.
-// Returns an error if limits are exceeded.
-func parseWatchQuery(r *http.Request) (*configpb.WatchRequest, error) {
+// parseWatchQuery extracts namespaces, prefixes, and Last-Event-ID from the
+// request. Returns an error if limits are exceeded.
+func parseWatchQuery(r *http.Request) (*configpb.WatchRequest, string, error) {
 	q := r.URL.Query()
 	ns := q["namespaces"]
 	pf := q["prefixes"]
 
 	if len(ns) > maxWatchParams {
-		return nil, fmt.Errorf("too many namespaces (max %d)", maxWatchParams)
+		return nil, "", fmt.Errorf("too many namespaces (max %d)", maxWatchParams)
 	}
 	if len(pf) > maxWatchParams {
-		return nil, fmt.Errorf("too many prefixes (max %d)", maxWatchParams)
+		return nil, "", fmt.Errorf("too many prefixes (max %d)", maxWatchParams)
 	}
 	for _, v := range ns {
 		if len(v) > maxParamValueLen {
-			return nil, fmt.Errorf("namespace value too long (max %d bytes)", maxParamValueLen)
+			return nil, "", fmt.Errorf("namespace value too long (max %d bytes)", maxParamValueLen)
 		}
 	}
 	for _, v := range pf {
 		if len(v) > maxParamValueLen {
-			return nil, fmt.Errorf("prefix value too long (max %d bytes)", maxParamValueLen)
+			return nil, "", fmt.Errorf("prefix value too long (max %d bytes)", maxParamValueLen)
 		}
 	}
+
+	lastEventID := r.Header.Get("Last-Event-ID")
 
 	return &configpb.WatchRequest{
 		Namespaces: ns,
 		Prefixes:   pf,
-	}, nil
+	}, lastEventID, nil
 }
 
 // httpHeadersToMetadata converts selected HTTP request headers into gRPC
@@ -415,7 +442,7 @@ func writeSSEError(sw *sseWriter, err error) {
 			msg = st.Message()
 		}
 	}
-	_ = sw.writeEvent("error", mustJSON(map[string]string{"error": msg}))
+	_ = sw.writeEvent("error", "", mustJSON(map[string]string{"error": msg}))
 }
 
 // writeHTTPError maps a gRPC error to an HTTP status code before SSE headers
@@ -476,8 +503,15 @@ func sanitizeSSEField(s string) string {
 }
 
 // composeHandlers creates a single http.Handler that routes SSE watch
-// requests to sseHandler and everything else to gwMux.
-func composeHandlers(gwMux http.Handler, sseHandler http.Handler) http.Handler {
+// requests to sseHandler, diff requests to diffHandler, optionally the
+// dashboard to dashHandler, and everything else to gwMux.
+// dashHandler may be nil, in which case the dashboard path is not registered.
+// dashPath must start with "/" and should not end with "/"; if empty, the
+// default "/dashboard" is used.
+func composeHandlers(gwMux http.Handler, sseHandler http.Handler, diffHandler http.Handler, dashHandler http.Handler, dashPath string) http.Handler {
+	if dashPath == "" {
+		dashPath = defaultDashboardPath
+	}
 	mux := http.NewServeMux()
 	mux.Handle("GET /v1/watch", sseHandler)
 	// Return 405 for non-GET methods on /v1/watch instead of falling
@@ -485,6 +519,10 @@ func composeHandlers(gwMux http.Handler, sseHandler http.Handler) http.Handler {
 	mux.HandleFunc("/v1/watch", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	})
+	mux.Handle("GET /v1/namespaces/{namespace}/keys/{key}/diff", diffHandler)
+	if dashHandler != nil {
+		mux.Handle(dashPath+"/", dashHandler)
+	}
 	mux.Handle("/", gwMux)
 	return mux
 }

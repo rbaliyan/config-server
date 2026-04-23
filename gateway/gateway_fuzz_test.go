@@ -38,7 +38,7 @@ func FuzzParseWatchQuery(f *testing.F) {
 			return
 		}
 		r := &http.Request{URL: u}
-		_, _ = parseWatchQuery(r)
+		_, _, _ = parseWatchQuery(r)
 	})
 }
 

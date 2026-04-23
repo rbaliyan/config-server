@@ -12,10 +12,11 @@ A gRPC configuration server with HTTP/JSON gateway, pluggable authorization, and
 ## Features
 
 - **gRPC API**: Full CRUD + Watch (server-streaming) + Version History for configuration entries
-- **HTTP/JSON Gateway**: RESTful API via gRPC-Gateway, auto-generated from proto definitions
-- **Pluggable Authorization**: Namespace + operation-level access control via `Authorizer` interface
-- **Go Client (`RemoteStore`)**: Implements `config.Store` — use with `config.Manager` like any local store
-- **Resilience**: Retries with exponential backoff, circuit breaker, per-call timeouts
+- **HTTP/JSON Gateway**: RESTful API via gRPC-Gateway, auto-generated from proto definitions, with SSE watch (including `Last-Event-ID` resumption) and a version-diff endpoint
+- **Pluggable Security**: Authentication + authorization via the `SecurityGuard` interface; OPA integration shipped as a sub-module
+- **Embedded Dashboard**: Optional web UI mounted at `/dashboard/` via `gateway.WithDashboard()`
+- **Go Client (`RemoteStore`)**: Implements `config.Store` and `config.VersionedStore` — use with `config.Manager` like any local store
+- **Resilience**: Retries with exponential backoff, circuit breaker, per-call timeouts, server-side rate limiting
 - **Watch Streams**: Real-time change notifications with automatic reconnection
 - **In-Process Mode**: Run HTTP gateway and gRPC service in the same process without network overhead
 
@@ -51,13 +52,18 @@ func main() {
     defer store.Close(ctx)
 
     svc, err := service.NewService(store,
-        service.WithAuthorizer(service.AllowAll()), // dev only!
+        service.WithSecurityGuard(service.AllowAll()), // dev only!
     )
     if err != nil {
         log.Fatal(err)
     }
 
-    grpcServer := grpc.NewServer()
+    // Install AuthInterceptor so every RPC is authenticated against the guard
+    // before it reaches the service. AllowAll treats every caller as anonymous.
+    grpcServer := grpc.NewServer(
+        grpc.ChainUnaryInterceptor(service.AuthInterceptor(service.AllowAll())),
+        grpc.ChainStreamInterceptor(service.StreamAuthInterceptor(service.AllowAll())),
+    )
     configpb.RegisterConfigServiceServer(grpcServer, svc)
 
     lis, _ := net.Listen("tcp", ":9090")
@@ -108,8 +114,11 @@ The gateway exposes a RESTful API auto-mapped from the proto definitions:
 | `DELETE` | Delete | `/v1/namespaces/{namespace}/keys/{key}` |
 | `GET` | List | `/v1/namespaces/{namespace}/keys?prefix=app/&limit=100&cursor=...` |
 | `GET` | GetVersions | `/v1/namespaces/{namespace}/keys/{key}/versions?version=3&limit=10&cursor=...` |
+| `GET` | Diff | `/v1/namespaces/{namespace}/keys/{key}/diff?v1=1&v2=2` |
 | `GET` | CheckAccess | `/v1/namespaces/{namespace}/access` |
 | `GET` | Watch (SSE) | `/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/` |
+
+The `diff` endpoint returns a JSON object with both versions' raw bytes, codecs, and a `changed` flag. It is implemented in the gateway itself (not in the proto service) and is available on both `NewHandler` and `NewInProcessHandler`.
 
 #### Examples
 
@@ -154,9 +163,11 @@ SSE stream format:
 retry: 5000
 : connected
 
+id: 42
 event: set
 data: {"type":"SET","namespace":"production","key":"app/timeout","value":"MzA=","codec":"json","version":2}
 
+id: 43
 event: delete
 data: {"type":"DELETE","namespace":"production","key":"app/old"}
 
@@ -167,7 +178,11 @@ The stream begins with a `retry: 5000` hint (reconnect after 5 seconds) and a `:
 
 The `value` field is base64-encoded (standard JSON encoding for byte arrays). Use `atob()` in JavaScript or `base64.StdEncoding.DecodeString()` in Go to decode it.
 
-**Note:** `Last-Event-ID` resumption is not supported. On reconnect, clients receive events from the current point forward — there is no replay of missed events. For durable delivery, use the gRPC Watch stream with the Go client's automatic reconnection (`WithWatchReconnect`).
+#### Last-Event-ID Resumption
+
+Each event carries a monotonically increasing `id:` line. The gateway keeps a bounded in-memory ring buffer (default: 500 events, configurable via `WithEventBufferSize`; set `0` to disable) and, when a client reconnects with the standard `Last-Event-ID` HTTP header or SSE `EventSource` automatic reconnect, replays every buffered event whose id is strictly greater than `Last-Event-ID`. Replay happens before the live stream resumes, so no ordering guarantees are broken.
+
+The buffer is per-handler (per `NewHandler` / `NewInProcessHandler`) and per-process; if your deployment fans clients across multiple gateway instances, each instance has an independent buffer. Events older than the buffer window (or lost to a gateway restart) are not replayed — clients that cannot tolerate gaps should fall back to re-reading the affected keys or use the gRPC Watch stream with the Go client's automatic reconnection (`WithWatchReconnect`).
 
 JavaScript example:
 ```javascript
@@ -183,93 +198,157 @@ Connect to a remote gRPC server:
 
 ```go
 handler, _ := gateway.NewHandler(ctx, "config-server:9090",
-    gateway.WithTLS(nil),          // System TLS
-    gateway.WithMuxOptions(...),   // Custom ServeMux options
+    gateway.WithTLS(nil),             // System TLS
+    gateway.WithMuxOptions(...),      // Custom ServeMux options
+    gateway.WithEventBufferSize(500), // Enables Last-Event-ID replay (default 500, 0 disables)
+    gateway.WithDashboard(),          // Mount dashboard at /dashboard/
 )
+defer handler.Close()
 http.Handle("/", handler)
 ```
 
 Or run in-process (no network hop):
 
 ```go
-svc, _ := service.NewService(store, service.WithAuthorizer(auth))
-handler, _ := gateway.NewInProcessHandler(ctx, svc)
+svc, _ := service.NewService(store, service.WithSecurityGuard(guard))
+handler, _ := gateway.NewInProcessHandler(ctx, svc, gateway.WithDashboard())
 http.Handle("/", handler)
 ```
 
-## Authorization
+#### Embedded Dashboard
 
-Authorization defaults to **deny-all** for safety. You must explicitly configure an authorizer.
+Pass `gateway.WithDashboard()` to mount an embedded web UI at `/dashboard/`. The dashboard is a static bundle (HTML/JS/CSS) served from the gateway and drives all data operations through the existing REST endpoints, so no additional server state is required. Use `gateway.WithDashboardPath("/ui")` to mount it at a different path (path must start with `/` and should not end with `/`).
 
-### Authorizer Interface
+## Security
+
+Security is modelled by a single `SecurityGuard` interface that handles **both** authentication and authorization. The service defaults to `DenyAll` for safety — you must explicitly configure a guard via `service.WithSecurityGuard`.
+
+### SecurityGuard Interface
 
 ```go
-type Authorizer interface {
-    Authorize(ctx context.Context, req AuthRequest) error
+type SecurityGuard interface {
+    // Authenticate extracts and validates the caller's identity from ctx.
+    Authenticate(ctx context.Context) (Identity, error)
+
+    // Authorize checks whether id may perform action on resource.
+    // action is one of "read", "write", "delete", "list", "watch".
+    // Resource carries the namespace and/or key when known (both may be
+    // empty for method-level checks).
+    Authorize(ctx context.Context, id Identity, action string, resource Resource) (Decision, error)
 }
 
-type AuthRequest struct {
+type Identity interface {
+    UserID() string
+    Claims() map[string]any
+}
+
+type Resource struct {
     Namespace string
-    Key       string    // Empty for List/Watch operations
-    Operation Operation // Read, Write, Delete, List, Watch
+    Key       string
+}
+
+type Decision struct {
+    Allowed bool
+    Scope   string
+    Reason  string
 }
 ```
 
-Return `nil` to allow, or a gRPC status error (typically `codes.PermissionDenied`) to deny.
+Install `service.AuthInterceptor(guard)` and `service.StreamAuthInterceptor(guard)` on the gRPC server so the interceptor calls `guard.Authenticate` once per RPC and places the resulting Identity on the context. Each Service method then calls `guard.Authorize` with the specific action and resource it is about to execute.
 
-### Built-in Authorizers
+### Built-in Guards
 
 ```go
-service.AllowAll()  // Permits everything (dev/testing only)
-service.DenyAll()   // Denies everything (safe default)
+service.AllowAll()  // Authenticates everyone as anonymous, allows everything (dev/testing only)
+service.DenyAll()   // Authenticate always fails — the safe default
 ```
 
-### Custom Authorizer Example
+### Custom Guard Example
 
-Implement namespace-based RBAC using gRPC metadata for authentication:
+A minimal RBAC guard using gRPC metadata for authentication:
 
 ```go
-// 1. Extract auth info via gRPC interceptor
-func authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-    md, _ := metadata.FromIncomingContext(ctx)
-    roles := md.Get("x-role")
-    if len(roles) == 0 {
-        return nil, status.Error(codes.Unauthenticated, "missing role")
-    }
-    ctx = context.WithValue(ctx, roleKey{}, roles[0])
-    return handler(ctx, req)
-}
-
-// 2. Check permissions in authorizer
-type rbacAuthorizer struct {
+type rbacGuard struct {
     allowed map[string][]string // role -> namespaces
 }
 
-func (a *rbacAuthorizer) Authorize(ctx context.Context, req service.AuthRequest) error {
-    role := ctx.Value(roleKey{}).(string)
-    for _, ns := range a.allowed[role] {
-        if ns == req.Namespace {
-            return nil
-        }
+type roleIdentity struct{ role, user string }
+
+func (r *roleIdentity) UserID() string         { return r.user }
+func (r *roleIdentity) Claims() map[string]any { return map[string]any{"role": r.role} }
+
+func (g *rbacGuard) Authenticate(ctx context.Context) (service.Identity, error) {
+    md, _ := metadata.FromIncomingContext(ctx)
+    roles := md.Get("x-role")
+    users := md.Get("x-user")
+    if len(roles) == 0 {
+        return nil, status.Error(codes.Unauthenticated, "missing role")
     }
-    return status.Errorf(codes.PermissionDenied, "access denied")
+    user := "anonymous"
+    if len(users) > 0 {
+        user = users[0]
+    }
+    return &roleIdentity{role: roles[0], user: user}, nil
 }
 
-// 3. Wire it up
-svc, _ := service.NewService(store,
-    service.WithAuthorizer(&rbacAuthorizer{
-        allowed: map[string][]string{
-            "admin":    {"production", "staging"},
-            "readonly": {"staging"},
-        },
-    }),
-)
+func (g *rbacGuard) Authorize(ctx context.Context, id service.Identity, action string, r service.Resource) (service.Decision, error) {
+    role, _ := id.Claims()["role"].(string)
+    for _, ns := range g.allowed[role] {
+        if ns == r.Namespace {
+            return service.Decision{Allowed: true}, nil
+        }
+    }
+    return service.Decision{Allowed: false, Reason: "role cannot access namespace"}, nil
+}
+
+guard := &rbacGuard{allowed: map[string][]string{
+    "admin":    {"production", "staging"},
+    "readonly": {"staging"},
+}}
+
+svc, _ := service.NewService(store, service.WithSecurityGuard(guard))
+
 grpcServer := grpc.NewServer(
-    grpc.ChainUnaryInterceptor(authInterceptor, service.LoggingInterceptor(logger)),
+    grpc.ChainUnaryInterceptor(
+        service.AuthInterceptor(guard),
+        service.LoggingInterceptor(logger),
+    ),
+    grpc.ChainStreamInterceptor(
+        service.StreamAuthInterceptor(guard),
+    ),
 )
 ```
 
-The separation between **authentication** (interceptor extracts identity) and **authorization** (Authorizer checks permissions) lets you integrate with any auth system: JWT, mTLS, API keys, OAuth, etc.
+The interface lets you plug in any auth scheme: JWT, mTLS, API keys, OAuth, session cookies, etc.
+
+### OPA SecurityGuard
+
+For policy-driven authorization, the `authorizer/opa` sub-module provides an OPA-backed `SecurityGuard`:
+
+```bash
+go get github.com/rbaliyan/config-server/authorizer/opa
+```
+
+```go
+import "github.com/rbaliyan/config-server/authorizer/opa"
+
+const policy = `
+package config.authz
+default allow = false
+allow if {
+    input.action == "read"
+    input.identity.user_id != ""
+}
+`
+
+guard, _ := opa.NewAuthorizer(ctx, policy, "data.config.authz.allow")
+// Or pull policy from a bundle URL that is re-fetched every 30s:
+// guard, _ := opa.NewBundleAuthorizer(ctx, "https://...", "data.config.authz.allow")
+
+svc, _ := service.NewService(store, service.WithSecurityGuard(guard))
+```
+
+**Note:** The OPA authorizer parses JWT tokens to expose their claims to the Rego policy but does **not** verify the JWT signature. Signature, issuer, audience, and expiry checks are the responsibility of the Rego policy (via OPA's built-in token introspection) or of an upstream proxy that has already validated the token.
 
 ## Server Interceptors
 
