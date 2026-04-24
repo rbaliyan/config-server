@@ -95,7 +95,7 @@ func (s *Store) CreateTable(ctx context.Context) error {
 
 // LoadOwned returns all namespaces owned by nodeID.
 func (s *Store) LoadOwned(ctx context.Context, nodeID string) ([]string, error) {
-	q := fmt.Sprintf(`SELECT namespace FROM %s WHERE node_id = %s`, s.table, s.placeholder(1))
+	q := fmt.Sprintf(`SELECT namespace FROM %s WHERE node_id = %s`, s.table, s.placeholder(1)) //#nosec G201 -- table name is operator-controlled configuration, not user input
 	rows, err := s.db.QueryContext(ctx, q, nodeID)
 	if err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (s *Store) SaveOwner(ctx context.Context, namespace, nodeID string) error {
 
 // DeleteOwner removes the ownership record for namespace.
 func (s *Store) DeleteOwner(ctx context.Context, namespace string) error {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE namespace = %s`, s.table, s.placeholder(1))
+	q := fmt.Sprintf(`DELETE FROM %s WHERE namespace = %s`, s.table, s.placeholder(1)) //#nosec G201 -- table name is operator-controlled configuration, not user input
 	_, err := s.db.ExecContext(ctx, q, namespace)
 	return err
 }
