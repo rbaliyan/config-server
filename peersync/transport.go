@@ -33,3 +33,9 @@ type Transport interface {
 	// Close releases transport resources.
 	Close() error
 }
+
+// TransportHealthChecker is an optional interface that transports may implement
+// to expose a health check. SyncStore.Health queries it when present.
+type TransportHealthChecker interface {
+	Health(ctx context.Context) error
+}

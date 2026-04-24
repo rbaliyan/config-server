@@ -129,7 +129,8 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 
 	_ = b // ensure nodeB is in the ring
 
-	a.Pin("payments", "nodeB")
+	ctx := context.Background()
+	a.Pin(ctx, "payments", "nodeB")
 
 	// scheduleAnnounce is async; drain the channel synchronously for the test.
 	// The memTransport delivers synchronously, so we just need the announceLoop
@@ -146,7 +147,7 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 		t.Fatalf("Pin not gossiped to nodeB: got %q ok=%v", id, ok)
 	}
 
-	a.Unpin("payments")
+	a.Unpin(ctx, "payments")
 	time.Sleep(20 * time.Millisecond)
 
 	// After unpin, routing is by hash — just verify it returns a valid node.

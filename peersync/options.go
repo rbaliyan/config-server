@@ -1,6 +1,9 @@
 package peersync
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
 const (
 	defaultHeartbeatInterval = 5 * time.Second
@@ -11,6 +14,7 @@ type options struct {
 	heartbeatInterval time.Duration
 	failureTimeout    time.Duration
 	vnodes            int
+	logger            *slog.Logger
 }
 
 func defaultOptions() options {
@@ -18,6 +22,7 @@ func defaultOptions() options {
 		heartbeatInterval: defaultHeartbeatInterval,
 		failureTimeout:    defaultFailureTimeout,
 		vnodes:            defaultVNodes,
+		logger:            slog.Default(),
 	}
 }
 
@@ -52,6 +57,17 @@ func WithVNodes(n int) Option {
 	return func(o *options) {
 		if n > 0 {
 			o.vnodes = n
+		}
+	}
+}
+
+// WithLogger sets the structured logger used for publish errors and dropped
+// replication messages. Defaults to slog.Default(). Pass slog.New(slog.NewTextHandler(io.Discard, nil))
+// to silence all output.
+func WithLogger(l *slog.Logger) Option {
+	return func(o *options) {
+		if l != nil {
+			o.logger = l
 		}
 	}
 }

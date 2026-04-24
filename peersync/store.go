@@ -71,7 +71,7 @@ type nodeState struct {
 // workloads where last-arrival-wins per node is sufficient.
 type SyncStore struct {
 	local     config.Store
-	ring      *Ring
+	ring      *ring
 	self      Member
 	transport Transport
 	opts      options
@@ -90,6 +90,7 @@ var _ config.Store = (*SyncStore)(nil)
 
 // New creates a SyncStore wrapping local. self identifies this node; transport
 // is the shared pub/sub channel used for gossip and replication.
+// Connect must be called before the store is used.
 func New(local config.Store, self Member, transport Transport, opts ...Option) (*SyncStore, error) {
 	if local == nil {
 		return nil, errLocalRequired
@@ -104,6 +105,7 @@ func New(local config.Store, self Member, transport Transport, opts ...Option) (
 	for _, opt := range opts {
 		opt(&o)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &SyncStore{
 		local:        local,
 		ring:         newRing(o.vnodes),
@@ -112,6 +114,8 @@ func New(local config.Store, self Member, transport Transport, opts ...Option) (
 		opts:         o,
 		nodes:        make(map[string]*nodeState),
 		ringChangeCh: make(chan struct{}, 1),
+		ctx:          ctx,
+		cancel:       cancel,
 	}, nil
 }
 
@@ -129,15 +133,16 @@ func (s *SyncStore) OwnerOf(namespace string) (string, bool) {
 
 // Pin forces namespace to always resolve to nodeID, bypassing the hash ring.
 // The override is gossiped to all peers so the ring converges cluster-wide.
-// Pin is asynchronous; the announce is scheduled and sent by the background loop.
-func (s *SyncStore) Pin(namespace, nodeID string) {
+// ctx is accepted for API consistency but the ring update is synchronous and
+// the gossip broadcast is scheduled asynchronously via the announce loop.
+func (s *SyncStore) Pin(_ context.Context, namespace, nodeID string) {
 	s.ring.Pin(namespace, nodeID)
 	s.scheduleAnnounce()
 }
 
 // Unpin removes a manual pin and restores hash-ring routing for namespace.
 // The change is gossiped to all peers asynchronously.
-func (s *SyncStore) Unpin(namespace string) {
+func (s *SyncStore) Unpin(_ context.Context, namespace string) {
 	s.ring.Unpin(namespace)
 	s.scheduleAnnounce()
 }
@@ -157,19 +162,14 @@ func (s *SyncStore) Connect(ctx context.Context) error {
 	if err := s.local.Connect(ctx); err != nil {
 		return err
 	}
-	bctx, cancel := context.WithCancel(context.Background())
-	s.ctx = bctx
-	s.cancel = cancel
 
-	if err := s.transport.Subscribe(bctx, s.handleMessage); err != nil {
-		cancel()
+	if err := s.transport.Subscribe(s.ctx, s.handleMessage); err != nil {
 		return err
 	}
 
 	// Add self to ring and announce synchronously before loops start.
 	s.ring.Add(s.self)
 	if err := s.publishRingChange(ctx); err != nil {
-		cancel()
 		return err
 	}
 
@@ -227,9 +227,15 @@ func (s *SyncStore) Watch(ctx context.Context, filter config.WatchFilter) (<-cha
 	return s.local.Watch(ctx, filter)
 }
 
-// Health delegates to the underlying store's HealthChecker if it implements one.
+// Health checks the local store and the transport. Both must implement their
+// respective optional health interfaces; either check is skipped if absent.
 func (s *SyncStore) Health(ctx context.Context) error {
 	if hc, ok := s.local.(config.HealthChecker); ok {
+		if err := hc.Health(ctx); err != nil {
+			return err
+		}
+	}
+	if hc, ok := s.transport.(TransportHealthChecker); ok {
 		return hc.Health(ctx)
 	}
 	return nil
@@ -240,6 +246,7 @@ func (s *SyncStore) Health(ctx context.Context) error {
 func (s *SyncStore) publishReplication(ctx context.Context, namespace, key string, v config.Value) {
 	data, err := v.Marshal(ctx)
 	if err != nil {
+		s.opts.logger.Error("peersync: marshal value for replication", "ns", namespace, "key", key, "err", err)
 		return
 	}
 	rm := replicationMsg{
@@ -253,14 +260,18 @@ func (s *SyncStore) publishReplication(ctx context.Context, namespace, key strin
 	}
 	inner, err := json.Marshal(rm)
 	if err != nil {
+		s.opts.logger.Error("peersync: marshal replication message", "ns", namespace, "key", key, "err", err)
 		return
 	}
 	env := message{Type: msgReplication, Payload: inner}
 	payload, err := json.Marshal(env)
 	if err != nil {
+		s.opts.logger.Error("peersync: marshal envelope", "err", err)
 		return
 	}
-	_ = s.transport.Publish(ctx, payload)
+	if err := s.transport.Publish(ctx, payload); err != nil {
+		s.opts.logger.Warn("peersync: publish replication", "ns", namespace, "key", key, "err", err)
+	}
 }
 
 func (s *SyncStore) publishDeletion(ctx context.Context, namespace, key string) {
@@ -272,14 +283,18 @@ func (s *SyncStore) publishDeletion(ctx context.Context, namespace, key string) 
 	}
 	inner, err := json.Marshal(rm)
 	if err != nil {
+		s.opts.logger.Error("peersync: marshal deletion message", "ns", namespace, "key", key, "err", err)
 		return
 	}
 	env := message{Type: msgReplication, Payload: inner}
 	payload, err := json.Marshal(env)
 	if err != nil {
+		s.opts.logger.Error("peersync: marshal envelope", "err", err)
 		return
 	}
-	_ = s.transport.Publish(ctx, payload)
+	if err := s.transport.Publish(ctx, payload); err != nil {
+		s.opts.logger.Warn("peersync: publish deletion", "ns", namespace, "key", key, "err", err)
+	}
 }
 
 func (s *SyncStore) publishRingChange(ctx context.Context) error {
@@ -326,7 +341,7 @@ func (s *SyncStore) handleMessage(raw []byte) {
 		if rm.NodeID == s.self.ID {
 			return
 		}
-		s.applyReplication(rm)
+		s.applyReplication(s.ctx, rm)
 	}
 }
 
@@ -371,19 +386,23 @@ func (s *SyncStore) handleHeartbeat(hb heartbeatMsg) {
 // Note: local.Set auto-increments the version counter in the local store,
 // so the Version field in replicationMsg is used only for best-effort
 // out-of-order detection. Versions will diverge across nodes after replication.
-func (s *SyncStore) applyReplication(rm replicationMsg) {
-	ctx := s.ctx
+func (s *SyncStore) applyReplication(ctx context.Context, rm replicationMsg) {
 	if rm.Type == replDelete {
-		_ = s.local.Delete(ctx, rm.Namespace, rm.Key)
+		if err := s.local.Delete(ctx, rm.Namespace, rm.Key); err != nil {
+			s.opts.logger.Warn("peersync: apply deletion", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
+		}
 		return
 	}
 	v, err := config.NewValueFromBytes(ctx, rm.Data, rm.Codec,
 		config.WithValueMetadata(rm.Version, time.Time{}, time.Time{}),
 	)
 	if err != nil {
+		s.opts.logger.Error("peersync: decode replicated value", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
 		return
 	}
-	_, _ = s.local.Set(ctx, rm.Namespace, rm.Key, v)
+	if _, err := s.local.Set(ctx, rm.Namespace, rm.Key, v); err != nil {
+		s.opts.logger.Warn("peersync: apply set", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
+	}
 }
 
 // --- background loops ---

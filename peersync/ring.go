@@ -57,10 +57,15 @@ type ringPoint struct {
 	id   string
 }
 
-// Ring is a thread-safe consistent-hash ring that maps namespace names to
+// ring is a thread-safe consistent-hash ring that maps namespace names to
 // cluster members. Virtual nodes (vnodes per member) ensure even distribution.
 // Manual overrides bypass the hash and pin a namespace to a specific member.
-type Ring struct {
+//
+// Concurrency: all exported methods are safe for concurrent use. Apply and
+// OwnerOf/Members/Snapshot can execute concurrently; Apply holds a write lock
+// for the duration of the rebuild so OwnerOf callers see either the old or
+// the new state atomically, never a partial one.
+type ring struct {
 	mu        sync.RWMutex
 	vnodes    int
 	points    []ringPoint // sorted ascending by hash
@@ -69,11 +74,11 @@ type Ring struct {
 	epoch     int64
 }
 
-func newRing(vnodes int) *Ring {
+func newRing(vnodes int) *ring {
 	if vnodes <= 0 {
 		vnodes = defaultVNodes
 	}
-	return &Ring{
+	return &ring{
 		vnodes:    vnodes,
 		members:   make(map[string]Member),
 		overrides: make(map[string]string),
@@ -82,7 +87,7 @@ func newRing(vnodes int) *Ring {
 
 // Add registers a member and inserts virtual points into the ring.
 // If the member is already present its address is updated.
-func (r *Ring) Add(m Member) {
+func (r *ring) Add(m Member) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.members[m.ID] = m
@@ -103,7 +108,7 @@ func (r *Ring) Add(m Member) {
 }
 
 // Remove unregisters a member and removes its virtual points from the ring.
-func (r *Ring) Remove(id string) {
+func (r *ring) Remove(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.members[id]; !ok {
@@ -121,7 +126,7 @@ func (r *Ring) Remove(id string) {
 }
 
 // Pin forces namespace to always resolve to nodeID, overriding the hash ring.
-func (r *Ring) Pin(namespace, nodeID string) {
+func (r *ring) Pin(namespace, nodeID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.overrides[namespace] = nodeID
@@ -129,7 +134,7 @@ func (r *Ring) Pin(namespace, nodeID string) {
 }
 
 // Unpin removes a manual pin and restores hash-ring routing for namespace.
-func (r *Ring) Unpin(namespace string) {
+func (r *ring) Unpin(namespace string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.overrides, namespace)
@@ -138,7 +143,7 @@ func (r *Ring) Unpin(namespace string) {
 
 // OwnerOf returns the member ID responsible for namespace, consulting manual
 // overrides first. Returns ("", false) when the ring is empty.
-func (r *Ring) OwnerOf(namespace string) (string, bool) {
+func (r *ring) OwnerOf(namespace string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if id, ok := r.overrides[namespace]; ok {
@@ -148,7 +153,7 @@ func (r *Ring) OwnerOf(namespace string) (string, bool) {
 }
 
 // Has reports whether a member with the given ID is currently in the ring.
-func (r *Ring) Has(id string) bool {
+func (r *ring) Has(id string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	_, ok := r.members[id]
@@ -156,7 +161,7 @@ func (r *Ring) Has(id string) bool {
 }
 
 // Members returns the current set of registered members.
-func (r *Ring) Members() []Member {
+func (r *ring) Members() []Member {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]Member, 0, len(r.members))
@@ -167,7 +172,7 @@ func (r *Ring) Members() []Member {
 }
 
 // Epoch returns the current ring epoch.
-func (r *Ring) Epoch() int64 {
+func (r *ring) Epoch() int64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.epoch
@@ -175,7 +180,7 @@ func (r *Ring) Epoch() int64 {
 
 // Snapshot returns a point-in-time copy of ring state suitable for gossip
 // or persistence. Members are sorted by ID for deterministic snapshots.
-func (r *Ring) Snapshot() RingState {
+func (r *ring) Snapshot() RingState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	members := make([]Member, 0, len(r.members))
@@ -194,7 +199,7 @@ func (r *Ring) Snapshot() RingState {
 
 // Apply rebuilds the ring from state. Returns false and is a no-op when
 // state.Epoch is not greater than the current epoch (stale update).
-func (r *Ring) Apply(state RingState) bool {
+func (r *ring) Apply(state RingState) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if state.Epoch <= r.epoch {
@@ -218,7 +223,7 @@ func (r *Ring) Apply(state RingState) bool {
 	return true
 }
 
-func (r *Ring) lookupLocked(namespace string) (string, bool) {
+func (r *ring) lookupLocked(namespace string) (string, bool) {
 	if len(r.points) == 0 {
 		return "", false
 	}
@@ -232,7 +237,7 @@ func (r *Ring) lookupLocked(namespace string) (string, bool) {
 	return r.points[idx].id, true
 }
 
-func (r *Ring) sortLocked() {
+func (r *ring) sortLocked() {
 	sort.Slice(r.points, func(i, j int) bool {
 		return r.points[i].hash < r.points[j].hash
 	})
