@@ -84,6 +84,9 @@ type SyncStore struct {
 	// indefinitely deferring a dead node's removal.
 	evicted map[string]time.Time
 
+	// ringChangeCh has capacity 1 so that multiple rapid ring mutations
+	// coalesce into a single gossip broadcast (non-blocking send drops the
+	// second signal when one is already queued).
 	ringChangeCh chan struct{}
 
 	ctx    context.Context
@@ -476,9 +479,11 @@ func (s *SyncStore) heartbeatLoop() {
 			if err != nil {
 				continue
 			}
-			if err := s.transport.Publish(s.ctx, payload); err != nil {
+			pubCtx, cancel := context.WithTimeout(s.ctx, s.opts.publishTimeout)
+			if err := s.transport.Publish(pubCtx, payload); err != nil {
 				s.opts.logger.Warn("peersync: publish heartbeat", "err", err)
 			}
+			cancel()
 		}
 	}
 }
@@ -548,7 +553,11 @@ func (s *SyncStore) announceLoop() {
 		case <-s.ctx.Done():
 			return
 		case <-s.ringChangeCh:
-			_ = s.publishRingChange(s.ctx)
+			pubCtx, cancel := context.WithTimeout(s.ctx, s.opts.publishTimeout)
+			if err := s.publishRingChange(pubCtx); err != nil {
+				s.opts.logger.Warn("peersync: publish ring change", "err", err)
+			}
+			cancel()
 		}
 	}
 }

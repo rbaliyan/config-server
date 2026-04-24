@@ -15,6 +15,7 @@ type options struct {
 	failureTimeout    time.Duration
 	vnodes            int
 	logger            *slog.Logger
+	publishTimeout    time.Duration
 }
 
 func defaultOptions() options {
@@ -23,6 +24,7 @@ func defaultOptions() options {
 		failureTimeout:    defaultFailureTimeout,
 		vnodes:            defaultVNodes,
 		logger:            slog.Default(),
+		publishTimeout:    defaultHeartbeatInterval, // per-publish deadline for background loops
 	}
 }
 
@@ -31,10 +33,24 @@ type Option func(*options)
 
 // WithHeartbeatInterval sets how often this node broadcasts its heartbeat.
 // Values ≤ 0 are ignored. Default is 5 seconds.
+// The per-publish timeout for background loop goroutines is automatically
+// updated to match the new interval unless overridden with WithPublishTimeout.
 func WithHeartbeatInterval(d time.Duration) Option {
 	return func(o *options) {
 		if d > 0 {
 			o.heartbeatInterval = d
+			o.publishTimeout = d
+		}
+	}
+}
+
+// WithPublishTimeout sets the per-call deadline applied to Publish in the
+// heartbeat and announce background loops. Defaults to the heartbeat interval.
+// Values ≤ 0 are ignored.
+func WithPublishTimeout(d time.Duration) Option {
+	return func(o *options) {
+		if d > 0 {
+			o.publishTimeout = d
 		}
 	}
 }
