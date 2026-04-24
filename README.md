@@ -472,6 +472,81 @@ See the [`examples/`](examples/) directory:
 - **[`embedded/`](examples/embedded/)** - Embed config service into existing gRPC server with custom auth
 - **[`client/`](examples/client/)** - Client usage with `config.Manager`
 
+## Peer Synchronisation (`peersync`)
+
+The `peersync` package wraps a `config.Store` with consistent-hash namespace ownership and gossip-based cluster membership. Each node holds its own backing store; the ring partitions namespaces across nodes and transparently forwards reads/writes to the owner via `PeerDialer`.
+
+```bash
+go get github.com/rbaliyan/config-server/peersync
+```
+
+### Transport (Redis)
+
+All cluster nodes must share the same Redis instance or channel. Use a distinct channel per logical cluster when multiple clusters share one Redis:
+
+```go
+import (
+    "github.com/rbaliyan/config-server/peersync"
+    goredis "github.com/redis/go-redis/v9"
+)
+
+rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+
+// "" defaults to the built-in channel name "config:sync".
+// Use an explicit channel (e.g. "prod:config:sync") when multiple
+// independent clusters share a single Redis instance to prevent
+// cross-cluster gossip pollution.
+tr, err := peersync.NewRedisTransport(rdb, "prod:config:sync")
+```
+
+### Quick example
+
+```go
+storeA := memory.NewStore()
+nodeA, _ := peersync.New(storeA, peersync.Member{ID: "nodeA", Addr: "nodeA:9000"}, tr)
+nodeA.Connect(ctx)
+defer nodeA.Close(ctx)
+
+// Claim makes this node the persistent owner of "payments".
+nodeA.Claim(ctx, "payments")
+
+owner, _ := nodeA.OwnerOf("payments")
+fmt.Println(owner) // "nodeA"
+```
+
+### Persistent ownership (`OwnershipStore`)
+
+Without an `OwnershipStore`, claimed namespaces are in-memory only and lost on restart. Implement the interface against any durable store (e.g. the same SQLite/PostgreSQL database that backs the node) to survive restarts:
+
+```go
+// myOwnershipStore implements peersync.OwnershipStore using any SQL database.
+type myOwnershipStore struct{ db *sql.DB }
+
+func (s *myOwnershipStore) LoadOwned(ctx context.Context, nodeID string) ([]string, error) {
+    rows, err := s.db.QueryContext(ctx,
+        "SELECT namespace FROM ns_owners WHERE node_id = $1", nodeID)
+    // ... scan rows into a []string
+}
+func (s *myOwnershipStore) SaveOwner(ctx context.Context, ns, nodeID string) error {
+    _, err := s.db.ExecContext(ctx,
+        "INSERT INTO ns_owners(namespace, node_id) VALUES($1,$2) ON CONFLICT(namespace) DO UPDATE SET node_id=EXCLUDED.node_id",
+        ns, nodeID)
+    return err
+}
+func (s *myOwnershipStore) DeleteOwner(ctx context.Context, ns string) error {
+    _, err := s.db.ExecContext(ctx, "DELETE FROM ns_owners WHERE namespace = $1", ns)
+    return err
+}
+
+nodeA, _ := peersync.New(storeA, peersync.Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
+    peersync.WithOwnershipStore(&myOwnershipStore{db: db}),
+)
+```
+
+On `Connect`, claimed namespaces are reloaded and re-announced before the first gossip broadcast, so ownership survives restarts without operator intervention.
+
+See the [package documentation](https://pkg.go.dev/github.com/rbaliyan/config-server/peersync) for the full API including `Pin`, `Claim`, health checking, and dead-owner handling.
+
 ## License
 
 MIT License

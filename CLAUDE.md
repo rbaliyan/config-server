@@ -27,6 +27,15 @@ config-server/
 ├── client/              # Go client implementing config.Store
 │   ├── store.go         # RemoteStore with retry, circuit breaker, watch
 │   └── options.go       # Client options (TLS, retry, circuit, watch, keepalive)
+├── peersync/            # Consistent-hash namespace ownership and gossip cluster membership
+│   ├── store.go         # SyncStore — routes ops to namespace owners, gossip lifecycle
+│   ├── ring.go          # CRC32 consistent-hash ring with virtual nodes and overrides
+│   ├── transport.go     # Transport and TransportHealthChecker interfaces
+│   ├── redis_transport.go # Redis pub/sub Transport implementation
+│   ├── dialer.go        # PeerDialer interface for forwarding ops to remote owners
+│   ├── ownership.go     # OwnershipStore interface for persistent Claim records
+│   ├── options.go       # SyncStore options (heartbeat, failure timeout, vnodes, …)
+│   └── optional.go      # BulkStore, AliasStore, VersionedStore, StatsProvider forwarding
 └── examples/            # Usage examples
     ├── standalone/      # Full gRPC + HTTP server
     ├── embedded/        # Embed into existing gRPC server with custom auth
