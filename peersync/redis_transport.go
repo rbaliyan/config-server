@@ -88,10 +88,3 @@ func (t *redisTransport) Close() error {
 func (t *redisTransport) Health(ctx context.Context) error {
 	return t.client.Ping(ctx).Err()
 }
-
-// safeCall invokes fn(payload) and recovers from any panic so that a
-// misbehaving handler cannot crash the Redis subscriber goroutine.
-func safeCall(fn func([]byte), payload []byte) {
-	defer func() { recover() }() //nolint:errcheck
-	fn(payload)
-}

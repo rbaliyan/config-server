@@ -181,12 +181,16 @@ func New(store config.Store, self Member, transport Transport, opts ...Option) (
 	}
 	// Warn when the failure timeout is too tight relative to the heartbeat
 	// interval; less than 3× means a slow heartbeat round-trip can cause
-	// spurious evictions.
-	if o.failureTimeout < 3*o.heartbeatInterval {
-		o.logger.Warn("peersync: failureTimeout < 3×heartbeatInterval; may cause spurious evictions",
-			"heartbeatInterval", o.heartbeatInterval,
-			"failureTimeout", o.failureTimeout,
-		)
+	// spurious evictions. Skip when the transport provides native membership
+	// events (MembershipTransport) since the heartbeat/failure-detection loops
+	// are not started in that case.
+	if _, hasMembership := transport.(MembershipTransport); !hasMembership {
+		if o.failureTimeout < 3*o.heartbeatInterval {
+			o.logger.Warn("peersync: failureTimeout < 3×heartbeatInterval; may cause spurious evictions",
+				"heartbeatInterval", o.heartbeatInterval,
+				"failureTimeout", o.failureTimeout,
+			)
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &SyncStore{
@@ -305,7 +309,13 @@ func (s *SyncStore) scheduleAnnounce() {
 //  4. Reloads persisted ownership from OwnershipStore (if configured) and
 //     re-pins each owned namespace before the first broadcast.
 //  5. Publishes an initial ring-change announcement (failure is non-fatal).
-//  6. Starts the heartbeat, failure-detection, and announce background loops.
+//  6. Membership management (one of two modes):
+//     a. If the transport implements MembershipTransport: subscribes to native
+//        membership events and starts only the announce loop. The transport's
+//        own protocol (e.g. SWIM) drives ring membership — no heartbeat or
+//        failure-detection loops are started.
+//     b. Otherwise: starts the heartbeat, failure-detection, and announce
+//        background loops (Redis-transport mode).
 //
 // Connect is not idempotent: calling it more than once returns
 // ErrAlreadyConnected. If Connect returns an error after step 2 or later, all
@@ -349,10 +359,23 @@ func (s *SyncStore) Connect(ctx context.Context) error {
 		s.opts.logger.Warn("peersync: initial ring announce failed, peers will learn via heartbeat", "err", err)
 	}
 
-	s.wg.Add(3)
-	go s.heartbeatLoop()
-	go s.failureDetectLoop()
-	go s.announceLoop()
+	if mt, ok := s.transport.(MembershipTransport); ok {
+		// Transport provides native membership events (e.g. SWIM via memberlist).
+		// Subscribe to them and skip the heartbeat/failure-detection loops.
+		if err := mt.SubscribeMembers(s.ctx, s.handleMemberEvent); err != nil {
+			s.cancel()
+			_ = s.transport.Close()
+			_ = s.local.Close(ctx)
+			return fmt.Errorf("peersync: subscribe membership events: %w", err)
+		}
+		s.wg.Add(1)
+		go s.announceLoop()
+	} else {
+		s.wg.Add(3)
+		go s.heartbeatLoop()
+		go s.failureDetectLoop()
+		go s.announceLoop()
+	}
 	return nil
 }
 
@@ -610,6 +633,24 @@ func (s *SyncStore) handleHeartbeat(hb heartbeatMsg) {
 
 	if wasAbsent {
 		s.ring.Add(Member{ID: hb.NodeID, Addr: hb.Addr})
+		s.scheduleAnnounce()
+	}
+}
+
+// handleMemberEvent is the MembershipTransport callback. It is the counterpart
+// to handleHeartbeat/detectFailures but driven by the transport's own protocol
+// rather than peersync's timer-based heartbeat loop. Only used when the
+// transport implements MembershipTransport.
+func (s *SyncStore) handleMemberEvent(evt MemberEvent) {
+	if evt.Member.ID == s.self.ID {
+		return // self is already managed by Connect / Close
+	}
+	switch evt.Type {
+	case MemberJoined:
+		s.ring.Add(evt.Member)
+		s.scheduleAnnounce()
+	case MemberLeft:
+		s.ring.Remove(evt.Member.ID)
 		s.scheduleAnnounce()
 	}
 }

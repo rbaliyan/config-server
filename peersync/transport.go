@@ -46,3 +46,51 @@ type Transport interface {
 type TransportHealthChecker interface {
 	Health(ctx context.Context) error
 }
+
+// MemberEventType classifies a cluster membership change delivered by
+// MembershipTransport.
+type MemberEventType uint8
+
+const (
+	// MemberJoined is fired when a node enters the cluster or updates its
+	// address. Callers should call ring.Add with the new member details.
+	MemberJoined MemberEventType = iota + 1
+	// MemberLeft is fired when a node gracefully leaves or is declared dead
+	// by the transport's own failure-detection protocol (e.g. SWIM missed
+	// probes). Callers should call ring.Remove for the departing node.
+	MemberLeft
+)
+
+// MemberEvent describes a single cluster membership change.
+type MemberEvent struct {
+	Type   MemberEventType
+	Member Member
+}
+
+// MembershipTransport is an optional interface that transports may implement
+// to expose native cluster membership events. When a Transport also implements
+// MembershipTransport, SyncStore delegates ring membership management to the
+// transport's own protocol (e.g. SWIM) instead of running its own
+// heartbeat/failure-detection loops. This eliminates the duplicate liveness
+// bookkeeping that would otherwise exist when the transport already has a
+// built-in membership protocol.
+//
+// The MemberlistTransport implements this interface. The RedisTransport does
+// not, so SyncStore falls back to its heartbeat/failure-detection loops when
+// Redis is used as the transport.
+type MembershipTransport interface {
+	// SubscribeMembers registers a handler invoked whenever cluster membership
+	// changes. SyncStore calls SubscribeMembers exactly once during Connect.
+	// Only one active subscription is supported; a second call must return an
+	// error. handler is called from the transport's internal goroutines and
+	// must not block for extended periods. The transport is responsible for
+	// recovering from handler panics.
+	SubscribeMembers(ctx context.Context, handler func(MemberEvent)) error
+}
+
+// safeCall invokes fn(arg) and recovers from any panic so that a misbehaving
+// handler cannot crash the transport's background goroutine.
+func safeCall[T any](fn func(T), arg T) {
+	defer func() { recover() }() //nolint:errcheck
+	fn(arg)
+}
