@@ -167,10 +167,11 @@ func (s *SyncStore) Connect(ctx context.Context) error {
 		return err
 	}
 
-	// Add self to ring and announce synchronously before loops start.
+	// Add self to ring and attempt an initial announcement. Failure is
+	// non-fatal: peers will learn of this node via heartbeats.
 	s.ring.Add(s.self)
 	if err := s.publishRingChange(ctx); err != nil {
-		return err
+		s.opts.logger.Warn("peersync: initial ring announce failed, peers will learn via heartbeat", "err", err)
 	}
 
 	s.wg.Add(3)
@@ -430,14 +431,22 @@ func (s *SyncStore) heartbeatLoop() {
 			if err != nil {
 				continue
 			}
-			_ = s.transport.Publish(s.ctx, payload)
+			if err := s.transport.Publish(s.ctx, payload); err != nil {
+				s.opts.logger.Warn("peersync: publish heartbeat", "err", err)
+			}
 		}
 	}
 }
 
 func (s *SyncStore) failureDetectLoop() {
 	defer s.wg.Done()
-	ticker := time.NewTicker(s.opts.heartbeatInterval)
+	// Check at failureTimeout/3 so a dead node is evicted within one check
+	// interval after crossing the threshold, regardless of heartbeat rate.
+	interval := s.opts.failureTimeout / 3
+	if interval < s.opts.heartbeatInterval {
+		interval = s.opts.heartbeatInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

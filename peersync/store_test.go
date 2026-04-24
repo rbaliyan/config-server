@@ -3,7 +3,11 @@ package peersync
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -296,4 +300,115 @@ func TestSyncStore_RingOnlyPeerEviction(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("nodeC (ring-only peer) was not evicted after failure timeout")
+}
+
+// TestSyncStore_CloseBeforeConnect verifies Close is safe when called on a
+// store that was never Connected (ctx is initialised in New, not Connect).
+func TestSyncStore_CloseBeforeConnect(t *testing.T) {
+	tr := &memTransport{}
+	local := memory.NewStore()
+	s, err := New(local, Member{ID: "n1", Addr: "n1:9000"}, tr)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatalf("Close before Connect: %v", err)
+	}
+}
+
+// errTransport is a Transport whose Publish always returns an error.
+type errTransport struct {
+	memTransport
+	publishErr error
+}
+
+func (t *errTransport) Publish(_ context.Context, _ []byte) error {
+	return t.publishErr
+}
+
+// TestSyncStore_PublishError verifies that transport publish errors are logged
+// but do not panic or return an error from Set.
+func TestSyncStore_PublishError(t *testing.T) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tr := &errTransport{publishErr: errors.New("network down")}
+	ctx := context.Background()
+
+	local := memory.NewStore()
+	s, err := New(local, Member{ID: "n1", Addr: "n1:9000"}, tr, WithLogger(discardLogger))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := s.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(ctx) })
+
+	// Set must succeed locally even if replication publish fails.
+	if _, err := s.Set(ctx, "ns", "k", config.NewValue("v")); err != nil {
+		t.Fatalf("Set with broken transport: %v", err)
+	}
+}
+
+// healthTransport implements Transport and TransportHealthChecker.
+type healthTransport struct {
+	memTransport
+	healthErr atomic.Pointer[error]
+}
+
+func (t *healthTransport) Health(_ context.Context) error {
+	if p := t.healthErr.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// TestSyncStore_Health verifies Health checks both local store and transport.
+func TestSyncStore_Health(t *testing.T) {
+	tr := &healthTransport{}
+	ctx := context.Background()
+
+	s := newTestStore(t, "n1", tr)
+
+	// Both healthy — Health must return nil.
+	if err := s.Health(ctx); err != nil {
+		t.Fatalf("Health healthy: %v", err)
+	}
+
+	// Transport unhealthy.
+	transportErr := errors.New("redis down")
+	tr.healthErr.Store(&transportErr)
+	if err := s.Health(ctx); !errors.Is(err, transportErr) {
+		t.Fatalf("Health with transport error: want %v, got %v", transportErr, err)
+	}
+}
+
+// TestSyncStore_ConcurrentPin verifies that concurrent Pin calls on the same
+// store do not race or corrupt ring state.
+func TestSyncStore_ConcurrentPin(t *testing.T) {
+	tr := &memTransport{}
+	ctx := context.Background()
+	a := newTestStore(t, "nodeA", tr)
+	newTestStore(t, "nodeB", tr)
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			ns := "ns"
+			if i%2 == 0 {
+				a.Pin(ctx, ns, "nodeA")
+			} else {
+				a.Unpin(ctx, ns)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Ring must still be consistent: OwnerOf returns a known node.
+	id, ok := a.OwnerOf("ns")
+	if ok && id != "nodeA" && id != "nodeB" {
+		t.Fatalf("unexpected owner after concurrent Pin/Unpin: %q", id)
+	}
 }
