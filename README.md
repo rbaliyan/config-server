@@ -416,7 +416,7 @@ result, _ := store.WatchWithResult(ctx, config.WatchFilter{
 })
 defer result.Stop()
 
-for event := range result.Events {
+for event := range result.Events() {
     fmt.Printf("%s %s/%s\n", event.Type, event.Namespace, event.Key)
 }
 

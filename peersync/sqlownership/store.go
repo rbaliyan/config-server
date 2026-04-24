@@ -15,14 +15,16 @@
 //
 // Pass the same driver name you used with sql.Open. The package uses this to
 // select the correct upsert dialect:
-//   - "postgres" → INSERT … ON CONFLICT … DO UPDATE
-//   - anything else (e.g. "sqlite3", "sqlite") → INSERT OR REPLACE
+//   - Any name containing "pg" or "postgres" (e.g. "postgres", "pgx",
+//     "postgresql") → PostgreSQL dialect with ON CONFLICT ... DO UPDATE
+//   - anything else (e.g. "sqlite3", "sqlite") → SQLite/INSERT OR REPLACE dialect
 package sqlownership
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rbaliyan/config-server/peersync"
 )
@@ -32,9 +34,10 @@ var _ peersync.OwnershipStore = (*Store)(nil)
 // Store implements peersync.OwnershipStore backed by a SQL database.
 // Create with New; call CreateTable before first use.
 type Store struct {
-	db     *sql.DB
-	driver string
-	table  string
+	db       *sql.DB
+	driver   string
+	postgres bool
+	table    string
 }
 
 type options struct {
@@ -58,13 +61,25 @@ func WithTable(name string) Option {
 }
 
 // New creates a Store. driverName must match the driver passed to sql.Open
-// (e.g. "postgres" or "sqlite3"). Call CreateTable before first use.
+// (e.g. "postgres", "pgx", or "sqlite3"). Call CreateTable before first use.
 func New(db *sql.DB, driverName string, opts ...Option) *Store {
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
 	}
-	return &Store{db: db, driver: driverName, table: o.table}
+	return &Store{
+		db:       db,
+		driver:   driverName,
+		postgres: isPostgres(driverName),
+		table:    o.table,
+	}
+}
+
+// isPostgres reports whether the driver name denotes PostgreSQL. Recognises
+// the common names "postgres", "postgresql", and "pgx" case-insensitively.
+func isPostgres(driver string) bool {
+	d := strings.ToLower(driver)
+	return strings.Contains(d, "postgres") || d == "pgx"
 }
 
 // CreateTable creates the ownership table if it does not already exist.
@@ -85,7 +100,7 @@ func (s *Store) LoadOwned(ctx context.Context, nodeID string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ns []string
 	for rows.Next() {
 		var n string
@@ -101,7 +116,7 @@ func (s *Store) LoadOwned(ctx context.Context, nodeID string) ([]string, error) 
 // owner record.
 func (s *Store) SaveOwner(ctx context.Context, namespace, nodeID string) error {
 	var q string
-	if s.driver == "postgres" {
+	if s.postgres {
 		q = fmt.Sprintf(
 			`INSERT INTO %s (namespace, node_id) VALUES ($1, $2) ON CONFLICT (namespace) DO UPDATE SET node_id = EXCLUDED.node_id`,
 			s.table,
@@ -123,7 +138,7 @@ func (s *Store) DeleteOwner(ctx context.Context, namespace string) error {
 // placeholder returns the SQL positional placeholder for the given 1-based
 // argument index. PostgreSQL uses $N; everything else uses ?.
 func (s *Store) placeholder(n int) string {
-	if s.driver == "postgres" {
+	if s.postgres {
 		return fmt.Sprintf("$%d", n)
 	}
 	return "?"

@@ -15,11 +15,13 @@ config-server/
 ├── proto/config/v1/     # Protobuf definitions and generated code
 │   └── config.proto     # Service, messages, enums
 ├── service/             # gRPC service implementation
-│   ├── service.go       # ConfigService (Get, Set, Delete, List, GetVersions, Watch, CheckAccess)
-│   ├── authorizer.go    # Authorizer interface, AllowAll, DenyAll
-│   ├── errors.go        # config error → gRPC status mapping
-│   ├── interceptors.go  # Logging and recovery interceptors
-│   └── options.go       # Service options (WithAuthorizer)
+│   ├── service.go       # ConfigService (Get, Set, Delete, List, GetVersions, Watch, CheckAccess, aliases)
+│   ├── snapshot.go      # Snapshot RPC with ETag caching and entry-count guard
+│   ├── security.go      # SecurityGuard interface, Identity, Decision, AllowAll, DenyAll
+│   ├── interceptors.go  # Logging, recovery, and authentication interceptors
+│   ├── ratelimit.go     # TokenBucketLimiter and rate-limit interceptors
+│   ├── errors.go        # config error → gRPC status mapping (with ErrorInfo reason)
+│   └── options.go       # Service options (WithSecurityGuard, limits)
 ├── gateway/             # HTTP/JSON gateway via gRPC-Gateway
 │   ├── handler.go       # NewHandler (remote), NewInProcessHandler (in-process)
 │   ├── sse.go           # SSE Watch endpoint (Server-Sent Events for /v1/watch)
@@ -45,7 +47,7 @@ config-server/
 
 ### Key Design Decisions
 
-- **Authorizer interface**: Separates authentication (interceptors) from authorization (Authorizer). Default is DenyAll for safety.
+- **SecurityGuard interface**: Combines authentication (Authenticate) and authorization (Authorize) behind a single guard. Default is DenyAll for safety. The OPA implementation lives in a separate `authorizer/opa` module.
 - **RemoteStore implements config.Store and config.VersionedStore**: Transparent to callers — works with Manager, live.Ref, bind.Binder. Versioning support is proxied to the server; if the server's store doesn't support versioning, `ErrVersioningNotSupported` is returned.
 - **Retry with circuit breaker**: Exponential backoff with jitter, per-call timeout support, non-retryable error classification.
 - **Watch reconnection**: Auto-reconnects on network errors, resets backoff after successful stream connection, max consecutive errors limit.

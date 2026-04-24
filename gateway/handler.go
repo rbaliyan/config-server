@@ -31,7 +31,6 @@ import (
 	"sync"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/rbaliyan/config-server/dashboard"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"google.golang.org/grpc"
 )
@@ -79,49 +78,32 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 		return nil, errors.New("gateway: gRPC address must not be empty")
 	}
 
-	o := &options{}
-	for _, opt := range opts {
-		opt(o)
-	}
+	o := newResolvedOptions(opts)
 
-	dialOpts := o.buildDialOpts()
-
-	conn, err := grpc.NewClient(grpcAddr, dialOpts...)
+	conn, err := grpc.NewClient(grpcAddr, o.buildDialOpts()...)
 	if err != nil {
 		return nil, err
 	}
 
 	mux := runtime.NewServeMux(o.muxOpts...)
-
 	if err := configpb.RegisterConfigServiceHandler(ctx, mux, conn); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 
-	heartbeat := o.heartbeatInterval
-	if heartbeat <= 0 {
-		heartbeat = defaultHeartbeatInterval
-	}
-
 	buf := newEventBuffer(resolveEventBufferSize(o.eventBufferSize))
-
 	client := configpb.NewConfigServiceClient(conn)
-	sseHandler := newRemoteSSEHandler(client, heartbeat, buf)
-	diffHandler := newRemoteDiffHandler(client)
-
-	dashPath := o.dashboardPath
-	if dashPath == "" {
-		dashPath = defaultDashboardPath
-	}
-	var dashHandler http.Handler
-	if o.dashboardEnabled {
-		dashHandler = dashboard.Handler(dashPath, "")
-	}
 
 	h := &Handler{
-		Handler: composeHandlers(mux, sseHandler, diffHandler, dashHandler, dashPath),
-		conn:    conn,
-		done:    make(chan struct{}),
+		Handler: composeHandlers(
+			mux,
+			newRemoteSSEHandler(client, o.heartbeatInterval, buf),
+			newRemoteDiffHandler(client),
+			o.dashHandler(),
+			o.dashboardPath,
+		),
+		conn: conn,
+		done: make(chan struct{}),
 	}
 
 	// Clean up when either the parent context is cancelled or Close is called.
@@ -147,39 +129,23 @@ func NewHandler(ctx context.Context, grpcAddr string, opts ...Option) (*Handler,
 //	handler, _ := gateway.NewInProcessHandler(ctx, svc)
 //	http.Handle("/api/", http.StripPrefix("/api", handler))
 func NewInProcessHandler(ctx context.Context, svc configpb.ConfigServiceServer, opts ...Option) (*Handler, error) {
-	o := &options{}
-	for _, opt := range opts {
-		opt(o)
-	}
+	o := newResolvedOptions(opts)
 
 	mux := runtime.NewServeMux(o.muxOpts...)
-
-	err := configpb.RegisterConfigServiceHandlerServer(ctx, mux, svc)
-	if err != nil {
+	if err := configpb.RegisterConfigServiceHandlerServer(ctx, mux, svc); err != nil {
 		return nil, err
-	}
-
-	heartbeat := o.heartbeatInterval
-	if heartbeat <= 0 {
-		heartbeat = defaultHeartbeatInterval
 	}
 
 	buf := newEventBuffer(resolveEventBufferSize(o.eventBufferSize))
 
-	sseHandler := newInProcessSSEHandler(svc, heartbeat, buf)
-	diffHandler := newInProcessDiffHandler(svc)
-
-	dashPath := o.dashboardPath
-	if dashPath == "" {
-		dashPath = defaultDashboardPath
-	}
-	var dashHandler http.Handler
-	if o.dashboardEnabled {
-		dashHandler = dashboard.Handler(dashPath, "")
-	}
-
 	return &Handler{
-		Handler: composeHandlers(mux, sseHandler, diffHandler, dashHandler, dashPath),
-		done:    make(chan struct{}),
+		Handler: composeHandlers(
+			mux,
+			newInProcessSSEHandler(svc, o.heartbeatInterval, buf),
+			newInProcessDiffHandler(svc),
+			o.dashHandler(),
+			o.dashboardPath,
+		),
+		done: make(chan struct{}),
 	}, nil
 }

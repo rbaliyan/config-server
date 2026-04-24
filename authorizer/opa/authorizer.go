@@ -307,7 +307,7 @@ func fetchBundle(ctx context.Context, url string, tlsCfg *tls.Config) (string, e
 	if err != nil {
 		return "", fmt.Errorf("http get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status %d from bundle URL", resp.StatusCode)

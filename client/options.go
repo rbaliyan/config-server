@@ -47,7 +47,9 @@ const (
 	ConnStateDisconnected ConnState = iota
 	ConnStateConnecting
 	ConnStateConnected
-	_ // reserved
+	// The integer value 3 is reserved for a future Ready-distinct-from-Connected
+	// state; do not switch on unknown ConnState values without a default branch.
+	_
 	ConnStateClosed
 )
 

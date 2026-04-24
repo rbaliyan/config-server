@@ -35,7 +35,10 @@ func NewGRPCDialer(opts ...client.Option) *GRPCDialer {
 
 // Dial returns a config.Store backed by a gRPC connection to addr. The
 // connection is cached; subsequent Dial calls for the same addr return the same
-// store.
+// store. The returned store is already Connect()-ed; callers should not call
+// Connect again. grpc.NewClient is lazy, so dialing does not perform a round
+// trip — a peer whose address has just been announced via gossip can be dialed
+// before it is actually reachable without triggering an immediate failure.
 func (d *GRPCDialer) Dial(addr string) (config.Store, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -48,6 +51,10 @@ func (d *GRPCDialer) Dial(addr string) (config.Store, error) {
 	store, err := client.NewRemoteStore(addr, d.opts...)
 	if err != nil {
 		return nil, fmt.Errorf("peersync: dial %s: %w", addr, err)
+	}
+	if err := store.Connect(context.Background()); err != nil {
+		_ = store.Close(context.Background())
+		return nil, fmt.Errorf("peersync: connect %s: %w", addr, err)
 	}
 	d.conns[addr] = store
 	return store, nil
