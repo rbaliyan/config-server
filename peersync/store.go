@@ -133,16 +133,16 @@ func (s *SyncStore) OwnerOf(namespace string) (string, bool) {
 
 // Pin forces namespace to always resolve to nodeID, bypassing the hash ring.
 // The override is gossiped to all peers so the ring converges cluster-wide.
-// ctx is accepted for API consistency but the ring update is synchronous and
-// the gossip broadcast is scheduled asynchronously via the announce loop.
-func (s *SyncStore) Pin(_ context.Context, namespace, nodeID string) {
+// The ring update is synchronous; the gossip broadcast is scheduled
+// asynchronously via the announce loop.
+func (s *SyncStore) Pin(namespace, nodeID string) {
 	s.ring.Pin(namespace, nodeID)
 	s.scheduleAnnounce()
 }
 
 // Unpin removes a manual pin and restores hash-ring routing for namespace.
 // The change is gossiped to all peers asynchronously.
-func (s *SyncStore) Unpin(_ context.Context, namespace string) {
+func (s *SyncStore) Unpin(namespace string) {
 	s.ring.Unpin(namespace)
 	s.scheduleAnnounce()
 }

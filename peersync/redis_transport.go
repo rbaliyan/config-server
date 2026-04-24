@@ -32,7 +32,6 @@ func (t *redisTransport) Publish(ctx context.Context, payload []byte) error {
 }
 
 func (t *redisTransport) Subscribe(ctx context.Context, handler func([]byte)) error {
-	started := false
 	t.once.Do(func() {
 		sub := t.client.Subscribe(ctx, t.channel)
 		bctx, cancel := context.WithCancel(context.Background())
@@ -54,9 +53,7 @@ func (t *redisTransport) Subscribe(ctx context.Context, handler func([]byte)) er
 				}
 			}
 		}()
-		started = true
 	})
-	_ = started
 	return nil
 }
 

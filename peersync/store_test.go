@@ -133,12 +133,9 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 
 	_ = b // ensure nodeB is in the ring
 
-	ctx := context.Background()
-	a.Pin(ctx, "payments", "nodeB")
+	a.Pin("payments", "nodeB")
 
-	// scheduleAnnounce is async; drain the channel synchronously for the test.
-	// The memTransport delivers synchronously, so we just need the announceLoop
-	// to run. Give it a moment.
+	// scheduleAnnounce is async; drain the channel via the announceLoop.
 	time.Sleep(20 * time.Millisecond)
 
 	id, ok := a.OwnerOf("payments")
@@ -151,7 +148,7 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 		t.Fatalf("Pin not gossiped to nodeB: got %q ok=%v", id, ok)
 	}
 
-	a.Unpin(ctx, "payments")
+	a.Unpin("payments")
 	time.Sleep(20 * time.Millisecond)
 
 	// After unpin, routing is by hash — just verify it returns a valid node.
@@ -386,7 +383,6 @@ func TestSyncStore_Health(t *testing.T) {
 // store do not race or corrupt ring state.
 func TestSyncStore_ConcurrentPin(t *testing.T) {
 	tr := &memTransport{}
-	ctx := context.Background()
 	a := newTestStore(t, "nodeA", tr)
 	newTestStore(t, "nodeB", tr)
 
@@ -398,9 +394,9 @@ func TestSyncStore_ConcurrentPin(t *testing.T) {
 			defer wg.Done()
 			ns := "ns"
 			if i%2 == 0 {
-				a.Pin(ctx, ns, "nodeA")
+				a.Pin(ns, "nodeA")
 			} else {
-				a.Unpin(ctx, ns)
+				a.Unpin(ns)
 			}
 		}(i)
 	}
