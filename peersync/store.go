@@ -342,7 +342,10 @@ func (s *SyncStore) handleMessage(raw []byte) {
 		if rm.NodeID == s.self.ID {
 			return
 		}
-		s.applyReplication(s.ctx, rm)
+		// Use WithoutCancel so an in-flight apply is not abandoned when
+		// the store begins shutting down; local.Close is called only after
+		// transport.Close, which waits for this goroutine to exit.
+		s.applyReplication(context.WithoutCancel(s.ctx), rm)
 	}
 }
 
@@ -383,6 +386,9 @@ func (s *SyncStore) handleHeartbeat(hb heartbeatMsg) {
 }
 
 // applyReplication applies a replication message from a peer.
+//
+// It calls s.local.Set directly — not s.Set — so the write is not re-published
+// to the transport and cannot produce a replication echo.
 //
 // Note: local.Set auto-increments the version counter in the local store,
 // so the Version field in replicationMsg is used only for best-effort

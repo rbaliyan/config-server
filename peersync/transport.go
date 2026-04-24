@@ -22,6 +22,8 @@ type message struct {
 // Redis instance or channel).
 type Transport interface {
 	// Publish broadcasts payload to every subscriber, including the caller.
+	// The loopback delivery is required: SyncStore uses the NodeID inside each
+	// message to skip its own writes, so every node must receive every message.
 	Publish(ctx context.Context, payload []byte) error
 
 	// Subscribe registers handler for all inbound messages.

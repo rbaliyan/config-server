@@ -299,6 +299,38 @@ func TestSyncStore_RingOnlyPeerEviction(t *testing.T) {
 	t.Fatal("nodeC (ring-only peer) was not evicted after failure timeout")
 }
 
+// TestRing_StaleApplyRejected verifies that Apply ignores ring states whose
+// epoch is not strictly greater than the current epoch.
+func TestRing_StaleApplyRejected(t *testing.T) {
+	r := newRing(10)
+	r.Add(Member{ID: "n1", Addr: "n1:9000"})
+	epoch := r.Epoch()
+
+	// Apply a state with the same epoch — must be rejected.
+	stale := RingState{
+		Members: []Member{{ID: "n2", Addr: "n2:9000"}},
+		Epoch:   epoch,
+	}
+	if r.Apply(stale) {
+		t.Fatal("Apply accepted state with equal epoch (stale update)")
+	}
+	if r.Has("n2") {
+		t.Fatal("stale Apply mutated ring members")
+	}
+
+	// Apply a state with a higher epoch — must be accepted.
+	fresh := RingState{
+		Members: []Member{{ID: "n1", Addr: "n1:9000"}, {ID: "n2", Addr: "n2:9000"}},
+		Epoch:   epoch + 1,
+	}
+	if !r.Apply(fresh) {
+		t.Fatal("Apply rejected state with higher epoch")
+	}
+	if !r.Has("n2") {
+		t.Fatal("fresh Apply did not add n2 to ring")
+	}
+}
+
 // TestSyncStore_CloseBeforeConnect verifies Close is safe when called on a
 // store that was never Connected (ctx is initialised in New, not Connect).
 func TestSyncStore_CloseBeforeConnect(t *testing.T) {
