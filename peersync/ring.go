@@ -174,7 +174,7 @@ func (r *Ring) Epoch() int64 {
 }
 
 // Snapshot returns a point-in-time copy of ring state suitable for gossip
-// or persistence.
+// or persistence. Members are sorted by ID for deterministic snapshots.
 func (r *Ring) Snapshot() RingState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -182,6 +182,9 @@ func (r *Ring) Snapshot() RingState {
 	for _, m := range r.members {
 		members = append(members, m)
 	}
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].ID < members[j].ID
+	})
 	overrides := make(map[string]string, len(r.overrides))
 	for k, v := range r.overrides {
 		overrides[k] = v

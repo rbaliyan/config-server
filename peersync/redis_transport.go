@@ -2,7 +2,7 @@ package peersync
 
 import (
 	"context"
-	"encoding/json"
+	"sync"
 
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -23,39 +23,40 @@ type redisTransport struct {
 	client  goredis.UniversalClient
 	channel string
 	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	once    sync.Once
 }
 
-func (t *redisTransport) Publish(ctx context.Context, msg Message) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	return t.client.Publish(ctx, t.channel, data).Err()
+func (t *redisTransport) Publish(ctx context.Context, payload []byte) error {
+	return t.client.Publish(ctx, t.channel, payload).Err()
 }
 
-func (t *redisTransport) Subscribe(ctx context.Context, handler func(Message)) error {
-	sub := t.client.Subscribe(ctx, t.channel)
-	bctx, cancel := context.WithCancel(context.Background())
-	t.cancel = cancel
-	go func() {
-		defer sub.Close()
-		ch := sub.Channel()
-		for {
-			select {
-			case <-bctx.Done():
-				return
-			case raw, ok := <-ch:
-				if !ok {
+func (t *redisTransport) Subscribe(ctx context.Context, handler func([]byte)) error {
+	started := false
+	t.once.Do(func() {
+		sub := t.client.Subscribe(ctx, t.channel)
+		bctx, cancel := context.WithCancel(context.Background())
+		t.cancel = cancel
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			defer sub.Close() //nolint:errcheck // Redis pub/sub Close is best-effort on shutdown
+			ch := sub.Channel()
+			for {
+				select {
+				case <-bctx.Done():
 					return
+				case raw, ok := <-ch:
+					if !ok {
+						return
+					}
+					handler([]byte(raw.Payload))
 				}
-				var msg Message
-				if err := json.Unmarshal([]byte(raw.Payload), &msg); err != nil {
-					continue
-				}
-				handler(msg)
 			}
-		}
-	}()
+		}()
+		started = true
+	})
+	_ = started
 	return nil
 }
 
@@ -63,5 +64,6 @@ func (t *redisTransport) Close() error {
 	if t.cancel != nil {
 		t.cancel()
 	}
+	t.wg.Wait()
 	return nil
 }

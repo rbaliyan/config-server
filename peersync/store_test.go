@@ -2,6 +2,7 @@ package peersync
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -15,21 +16,21 @@ import (
 // Publish delivers synchronously to all subscribers.
 type memTransport struct {
 	mu       sync.Mutex
-	handlers []func(Message)
+	handlers []func([]byte)
 }
 
-func (t *memTransport) Publish(_ context.Context, msg Message) error {
+func (t *memTransport) Publish(_ context.Context, payload []byte) error {
 	t.mu.Lock()
-	handlers := make([]func(Message), len(t.handlers))
+	handlers := make([]func([]byte), len(t.handlers))
 	copy(handlers, t.handlers)
 	t.mu.Unlock()
 	for _, h := range handlers {
-		h(msg)
+		h(payload)
 	}
 	return nil
 }
 
-func (t *memTransport) Subscribe(_ context.Context, handler func(Message)) error {
+func (t *memTransport) Subscribe(_ context.Context, handler func([]byte)) error {
 	t.mu.Lock()
 	t.handlers = append(t.handlers, handler)
 	t.mu.Unlock()
@@ -122,16 +123,19 @@ func TestSyncStore_NoSelfReplication(t *testing.T) {
 
 func TestSyncStore_PinUnpin(t *testing.T) {
 	tr := &memTransport{}
-	ctx := context.Background()
 
 	a := newTestStore(t, "nodeA", tr)
 	b := newTestStore(t, "nodeB", tr)
 
 	_ = b // ensure nodeB is in the ring
 
-	if err := a.Pin(ctx, "payments", "nodeB"); err != nil {
-		t.Fatalf("Pin: %v", err)
-	}
+	a.Pin("payments", "nodeB")
+
+	// scheduleAnnounce is async; drain the channel synchronously for the test.
+	// The memTransport delivers synchronously, so we just need the announceLoop
+	// to run. Give it a moment.
+	time.Sleep(20 * time.Millisecond)
+
 	id, ok := a.OwnerOf("payments")
 	if !ok || id != "nodeB" {
 		t.Fatalf("Pin: expected nodeB owner, got %q ok=%v", id, ok)
@@ -142,9 +146,9 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 		t.Fatalf("Pin not gossiped to nodeB: got %q ok=%v", id, ok)
 	}
 
-	if err := a.Unpin(ctx, "payments"); err != nil {
-		t.Fatalf("Unpin: %v", err)
-	}
+	a.Unpin("payments")
+	time.Sleep(20 * time.Millisecond)
+
 	// After unpin, routing is by hash — just verify it returns a valid node.
 	id, ok = a.OwnerOf("payments")
 	if !ok || (id != "nodeA" && id != "nodeB") {
@@ -202,4 +206,93 @@ func TestNew_Validation(t *testing.T) {
 	if _, err := New(local, Member{ID: "n1"}, nil); err == nil {
 		t.Error("expected error for nil transport")
 	}
+}
+
+// TestSyncStore_Members verifies Members() returns the current ring members.
+func TestSyncStore_Members(t *testing.T) {
+	tr := &memTransport{}
+	a := newTestStore(t, "nodeA", tr)
+	b := newTestStore(t, "nodeB", tr)
+	_ = b
+
+	// Give heartbeats a moment to propagate (memTransport is sync, but
+	// announceLoop is async).
+	time.Sleep(20 * time.Millisecond)
+
+	members := a.Members()
+	found := make(map[string]bool)
+	for _, m := range members {
+		found[m.ID] = true
+	}
+	if !found["nodeA"] {
+		t.Error("nodeA missing from Members()")
+	}
+}
+
+// TestSyncStore_Snapshot verifies Snapshot() is deterministic across calls.
+func TestSyncStore_Snapshot(t *testing.T) {
+	tr := &memTransport{}
+	a := newTestStore(t, "nodeA", tr)
+	newTestStore(t, "nodeB", tr)
+	time.Sleep(20 * time.Millisecond)
+
+	s1 := a.Snapshot()
+	s2 := a.Snapshot()
+
+	b1, _ := json.Marshal(s1)
+	b2, _ := json.Marshal(s2)
+	if string(b1) != string(b2) {
+		t.Fatalf("Snapshot not deterministic: %s vs %s", b1, b2)
+	}
+}
+
+// TestSyncStore_RingOnlyPeerEviction verifies that nodes added only via
+// ring-change messages (never sent a heartbeat) can still be evicted.
+func TestSyncStore_RingOnlyPeerEviction(t *testing.T) {
+	tr := &memTransport{}
+	ctx := context.Background()
+
+	a, _ := New(memory.NewStore(), Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
+		WithHeartbeatInterval(20*time.Millisecond),
+		WithFailureTimeout(60*time.Millisecond),
+	)
+	_ = a.Connect(ctx)
+	defer func() { _ = a.Close(ctx) }()
+
+	// Manually inject a ring-change message that adds nodeC without nodeC
+	// ever sending a heartbeat.
+	state := RingState{
+		Members: []Member{
+			{ID: "nodeA", Addr: "nodeA:9000"},
+			{ID: "nodeC", Addr: "nodeC:9000"},
+		},
+		Epoch: a.ring.Epoch() + 5,
+	}
+	inner, _ := json.Marshal(state)
+	env := message{Type: msgRingChange, Payload: inner}
+	payload, _ := json.Marshal(env)
+
+	tr.mu.Lock()
+	handlers := make([]func([]byte), len(tr.handlers))
+	copy(handlers, tr.handlers)
+	tr.mu.Unlock()
+	for _, h := range handlers {
+		h(payload)
+	}
+
+	// nodeC should now be in the ring.
+	if !a.ring.Has("nodeC") {
+		t.Fatal("nodeC not added via ring-change")
+	}
+
+	// Wait for failure detector to evict nodeC (it has lastSeen = now, so
+	// we need to wait > failureTimeout).
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !a.ring.Has("nodeC") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("nodeC (ring-only peer) was not evicted after failure timeout")
 }

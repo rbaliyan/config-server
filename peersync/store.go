@@ -1,36 +1,57 @@
+// Package-level replication note:
+// applyReplication calls local.Set which auto-increments the version counter
+// in the local store. As a result, the Version stored in each node's backend
+// will diverge after replication. The Version field in replicationMsg is used
+// only for best-effort out-of-order detection and does not represent a
+// cluster-wide version. Callers that require strict version consistency must
+// coordinate externally.
 package peersync
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/rbaliyan/config"
 )
 
-// heartbeatMsg is the payload for MsgHeartbeat.
+var (
+	errLocalRequired     = errors.New("peersync: local store is required")
+	errSelfIDRequired    = errors.New("peersync: member ID must not be empty")
+	errTransportRequired = errors.New("peersync: transport is required")
+)
+
+// heartbeatMsg is the payload for msgHeartbeat.
 type heartbeatMsg struct {
 	NodeID string `json:"id"`
 	Addr   string `json:"addr"`
 	Epoch  int64  `json:"epoch"`
 }
 
-// replicationMsg carries a single Set or Delete operation to peer nodes.
-type replicationMsg struct {
-	NodeID    string  `json:"src"`
-	Namespace string  `json:"ns"`
-	Key       string  `json:"k"`
-	Type      uint8   `json:"t"` // 0 = set, 1 = delete
-	Data      []byte  `json:"d,omitempty"`
-	Codec     string  `json:"c,omitempty"`
-	Version   int64   `json:"v,omitempty"`
-}
+// replOp is the typed enum for replication operation types.
+type replOp uint8
 
 const (
-	replSet    uint8 = 0
-	replDelete uint8 = 1
+	replSet    replOp = iota
+	replDelete replOp = 1
 )
+
+// replicationMsg carries a single Set or Delete operation to peer nodes.
+//
+// applyReplication calls local.Set, which auto-increments the version in
+// the local store. Version here is used for best-effort out-of-order
+// detection only; versions will diverge across nodes after replication.
+type replicationMsg struct {
+	NodeID    string `json:"src"`
+	Namespace string `json:"ns"`
+	Key       string `json:"k"`
+	Type      replOp `json:"t"` // 0 = set, 1 = delete
+	Data      []byte `json:"d,omitempty"`
+	Codec     string `json:"c,omitempty"`
+	Version   int64  `json:"v,omitempty"`
+}
 
 type nodeState struct {
 	member   Member
@@ -43,6 +64,11 @@ type nodeState struct {
 // All nodes in a cluster must share the same Transport (e.g. the same Redis
 // pub/sub channel). Writes are applied locally first, then broadcast to peers
 // via replication messages. Reads are always served from the local store.
+//
+// Replication version divergence note: because each node's local store
+// auto-increments versions on Set, Version values will diverge across nodes
+// after replication. This is acceptable for low-contention configuration
+// workloads where last-arrival-wins per node is sufficient.
 type SyncStore struct {
 	local     config.Store
 	ring      *Ring
@@ -52,6 +78,8 @@ type SyncStore struct {
 
 	nodesMu sync.RWMutex
 	nodes   map[string]*nodeState
+
+	ringChangeCh chan struct{}
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -64,30 +92,34 @@ var _ config.Store = (*SyncStore)(nil)
 // is the shared pub/sub channel used for gossip and replication.
 func New(local config.Store, self Member, transport Transport, opts ...Option) (*SyncStore, error) {
 	if local == nil {
-		return nil, config.ErrStoreNotConnected
+		return nil, errLocalRequired
 	}
 	if self.ID == "" {
-		return nil, config.ErrInvalidKey
+		return nil, errSelfIDRequired
 	}
 	if transport == nil {
-		return nil, config.ErrStoreNotConnected
+		return nil, errTransportRequired
 	}
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
 	}
 	return &SyncStore{
-		local:     local,
-		ring:      newRing(o.vnodes),
-		self:      self,
-		transport: transport,
-		opts:      o,
-		nodes:     make(map[string]*nodeState),
+		local:        local,
+		ring:         newRing(o.vnodes),
+		self:         self,
+		transport:    transport,
+		opts:         o,
+		nodes:        make(map[string]*nodeState),
+		ringChangeCh: make(chan struct{}, 1),
 	}, nil
 }
 
-// Ring returns the underlying Ring for direct inspection or pin/unpin operations.
-func (s *SyncStore) Ring() *Ring { return s.ring }
+// Members returns the current set of registered members in the ring.
+func (s *SyncStore) Members() []Member { return s.ring.Members() }
+
+// Snapshot returns a point-in-time copy of the ring state.
+func (s *SyncStore) Snapshot() RingState { return s.ring.Snapshot() }
 
 // OwnerOf returns the member ID currently responsible for namespace according
 // to the ring. Returns ("", false) when the cluster has no members yet.
@@ -97,16 +129,26 @@ func (s *SyncStore) OwnerOf(namespace string) (string, bool) {
 
 // Pin forces namespace to always resolve to nodeID, bypassing the hash ring.
 // The override is gossiped to all peers so the ring converges cluster-wide.
-func (s *SyncStore) Pin(ctx context.Context, namespace, nodeID string) error {
+// Pin is asynchronous; the announce is scheduled and sent by the background loop.
+func (s *SyncStore) Pin(namespace, nodeID string) {
 	s.ring.Pin(namespace, nodeID)
-	return s.publishRingChange(ctx)
+	s.scheduleAnnounce()
 }
 
 // Unpin removes a manual pin and restores hash-ring routing for namespace.
-// The change is gossiped to all peers.
-func (s *SyncStore) Unpin(ctx context.Context, namespace string) error {
+// The change is gossiped to all peers asynchronously.
+func (s *SyncStore) Unpin(namespace string) {
 	s.ring.Unpin(namespace)
-	return s.publishRingChange(ctx)
+	s.scheduleAnnounce()
+}
+
+// scheduleAnnounce enqueues a ring-change broadcast without blocking.
+// If an announce is already queued the call is a no-op.
+func (s *SyncStore) scheduleAnnounce() {
+	select {
+	case s.ringChangeCh <- struct{}{}:
+	default:
+	}
 }
 
 // Connect connects the underlying store and joins the cluster by registering
@@ -124,26 +166,29 @@ func (s *SyncStore) Connect(ctx context.Context) error {
 		return err
 	}
 
-	// Add self to ring and announce to the cluster.
+	// Add self to ring and announce synchronously before loops start.
 	s.ring.Add(s.self)
 	if err := s.publishRingChange(ctx); err != nil {
 		cancel()
 		return err
 	}
 
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go s.heartbeatLoop()
 	go s.failureDetectLoop()
+	go s.announceLoop()
 	return nil
 }
 
 // Close leaves the cluster, stops background loops, and closes the underlying store.
+// Order: cancel context → wait for own goroutines → close transport (waits for its
+// goroutine) → close local store.
 func (s *SyncStore) Close(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
 	s.wg.Wait()
-	s.transport.Close()
+	_ = s.transport.Close()
 	return s.local.Close(ctx)
 }
 
@@ -206,11 +251,16 @@ func (s *SyncStore) publishReplication(ctx context.Context, namespace, key strin
 		Codec:     v.Codec(),
 		Version:   v.Metadata().Version(),
 	}
-	payload, err := json.Marshal(rm)
+	inner, err := json.Marshal(rm)
 	if err != nil {
 		return
 	}
-	_ = s.transport.Publish(ctx, Message{Type: MsgReplication, Payload: payload})
+	env := message{Type: msgReplication, Payload: inner}
+	payload, err := json.Marshal(env)
+	if err != nil {
+		return
+	}
+	_ = s.transport.Publish(ctx, payload)
 }
 
 func (s *SyncStore) publishDeletion(ctx context.Context, namespace, key string) {
@@ -220,41 +270,56 @@ func (s *SyncStore) publishDeletion(ctx context.Context, namespace, key string) 
 		Key:       key,
 		Type:      replDelete,
 	}
-	payload, err := json.Marshal(rm)
+	inner, err := json.Marshal(rm)
 	if err != nil {
 		return
 	}
-	_ = s.transport.Publish(ctx, Message{Type: MsgReplication, Payload: payload})
+	env := message{Type: msgReplication, Payload: inner}
+	payload, err := json.Marshal(env)
+	if err != nil {
+		return
+	}
+	_ = s.transport.Publish(ctx, payload)
 }
 
 func (s *SyncStore) publishRingChange(ctx context.Context) error {
 	snap := s.ring.Snapshot()
-	data, err := json.Marshal(snap)
+	inner, err := json.Marshal(snap)
 	if err != nil {
 		return err
 	}
-	return s.transport.Publish(ctx, Message{Type: MsgRingChange, Payload: data})
+	env := message{Type: msgRingChange, Payload: inner}
+	payload, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	return s.transport.Publish(ctx, payload)
 }
 
 // --- message handling ---
 
-func (s *SyncStore) handleMessage(msg Message) {
-	switch msg.Type {
-	case MsgHeartbeat:
+func (s *SyncStore) handleMessage(raw []byte) {
+	var env message
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return
+	}
+	switch env.Type {
+	case msgHeartbeat:
 		var hb heartbeatMsg
-		if err := json.Unmarshal(msg.Payload, &hb); err != nil {
+		if err := json.Unmarshal(env.Payload, &hb); err != nil {
 			return
 		}
 		s.handleHeartbeat(hb)
-	case MsgRingChange:
+	case msgRingChange:
 		var state RingState
-		if err := json.Unmarshal(msg.Payload, &state); err != nil {
+		if err := json.Unmarshal(env.Payload, &state); err != nil {
 			return
 		}
 		s.ring.Apply(state)
-	case MsgReplication:
+		s.seedNodesFromState(state)
+	case msgReplication:
 		var rm replicationMsg
-		if err := json.Unmarshal(msg.Payload, &rm); err != nil {
+		if err := json.Unmarshal(env.Payload, &rm); err != nil {
 			return
 		}
 		// Skip messages we originated to avoid re-applying our own writes.
@@ -262,6 +327,23 @@ func (s *SyncStore) handleMessage(msg Message) {
 			return
 		}
 		s.applyReplication(rm)
+	}
+}
+
+// seedNodesFromState seeds s.nodes from a received RingState so that the
+// failure detector can evict nodes that were added via ring-change messages
+// but never sent a heartbeat to this node.
+func (s *SyncStore) seedNodesFromState(state RingState) {
+	now := time.Now()
+	s.nodesMu.Lock()
+	defer s.nodesMu.Unlock()
+	for _, m := range state.Members {
+		if m.ID == s.self.ID {
+			continue
+		}
+		if _, exists := s.nodes[m.ID]; !exists {
+			s.nodes[m.ID] = &nodeState{member: m, lastSeen: now}
+		}
 	}
 }
 
@@ -278,12 +360,17 @@ func (s *SyncStore) handleHeartbeat(hb heartbeatMsg) {
 	s.nodesMu.Unlock()
 
 	if wasAbsent {
-		// New node seen for the first time: add to ring and broadcast updated state.
+		// New node seen for the first time: add to ring and schedule broadcast.
 		s.ring.Add(Member{ID: hb.NodeID, Addr: hb.Addr})
-		_ = s.publishRingChange(s.ctx)
+		s.scheduleAnnounce()
 	}
 }
 
+// applyReplication applies a replication message from a peer.
+//
+// Note: local.Set auto-increments the version counter in the local store,
+// so the Version field in replicationMsg is used only for best-effort
+// out-of-order detection. Versions will diverge across nodes after replication.
 func (s *SyncStore) applyReplication(rm replicationMsg) {
 	ctx := s.ctx
 	if rm.Type == replDelete {
@@ -319,7 +406,12 @@ func (s *SyncStore) heartbeatLoop() {
 			if err != nil {
 				continue
 			}
-			_ = s.transport.Publish(s.ctx, Message{Type: MsgHeartbeat, Payload: data})
+			env := message{Type: msgHeartbeat, Payload: data}
+			payload, err := json.Marshal(env)
+			if err != nil {
+				continue
+			}
+			_ = s.transport.Publish(s.ctx, payload)
 		}
 	}
 }
@@ -360,6 +452,21 @@ func (s *SyncStore) detectFailures() {
 		for _, id := range dead {
 			s.ring.Remove(id)
 		}
-		_ = s.publishRingChange(s.ctx)
+		s.scheduleAnnounce()
+	}
+}
+
+// announceLoop drains ringChangeCh and performs the actual ring-change
+// broadcast. This decouples publishRingChange from the transport's handler
+// goroutine, preventing re-entrant publish deadlocks.
+func (s *SyncStore) announceLoop() {
+	defer s.wg.Done()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-s.ringChangeCh:
+			_ = s.publishRingChange(s.ctx)
+		}
 	}
 }
