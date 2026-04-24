@@ -205,11 +205,22 @@ func (a *Authorizer) Authenticate(ctx context.Context) (service.Identity, error)
 	token := strings.TrimPrefix(values[0], "Bearer ")
 	token = strings.TrimPrefix(token, "bearer ")
 
-	// Parse JWT claims (no signature verification — OPA policy handles authz).
-	claims, err := parseJWTClaims(token)
-	if err != nil {
-		// Not a JWT; treat as opaque token, use it as the user ID.
-		return &opaIdentity{userID: token, claims: map[string]any{}}, nil
+	var claims map[string]any
+	if v := a.opts.jwtVerifier; v != nil {
+		// Signature-verified path: any verification failure is a hard error.
+		verified, err := v.Verify(ctx, token)
+		if err != nil {
+			return nil, fmt.Errorf("opa: jwt verification failed: %w", err)
+		}
+		claims = verified
+	} else {
+		// Unverified path: base64-decode only — signature is NOT checked.
+		parsed, err := parseJWTClaims(token)
+		if err != nil {
+			// Not a JWT; treat as opaque token, use it as the user ID.
+			return &opaIdentity{userID: token, claims: map[string]any{}}, nil
+		}
+		claims = parsed
 	}
 
 	userID, _ := claims[a.opts.subjectClaim].(string)
