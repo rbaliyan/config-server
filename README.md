@@ -480,9 +480,13 @@ The `peersync` package wraps a `config.Store` with consistent-hash namespace own
 go get github.com/rbaliyan/config-server/peersync
 ```
 
-### Transport (Redis)
+### Transport options
 
-All cluster nodes must share the same Redis instance or channel. Use a distinct channel per logical cluster when multiple clusters share one Redis:
+Two transports are provided out of the box. Both satisfy `peersync.Transport`.
+
+**Redis** (centralised broker — requires a shared Redis instance):
+
+All cluster nodes must use the same Redis instance or channel. Use a distinct channel per logical cluster when multiple clusters share one Redis:
 
 ```go
 import (
@@ -498,6 +502,23 @@ rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
 // cross-cluster gossip pollution.
 tr, err := peersync.NewRedisTransport(rdb, "prod:config:sync")
 ```
+
+**Memberlist** (peer-to-peer gossip — no external broker):
+
+```go
+import "github.com/hashicorp/memberlist"
+
+cfg := memberlist.DefaultLANConfig()
+cfg.BindAddr = "0.0.0.0"
+cfg.BindPort = 7946
+
+tr, err := peersync.NewMemberlistTransport(cfg)
+
+// Join an existing cluster node; skip for a brand-new single-node cluster.
+tr.Join([]string{"peer1:7946", "peer2:7946"})
+```
+
+Memberlist uses a peer-to-peer SWIM gossip protocol — no Redis or other broker required. Messages are gossiped across the cluster in O(log N) rounds. Use Redis when you need sub-second convergence; use memberlist when you want zero external dependencies.
 
 ### Quick example
 

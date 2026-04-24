@@ -31,7 +31,8 @@ config-server/
 │   ├── store.go         # SyncStore — routes ops to namespace owners, gossip lifecycle
 │   ├── ring.go          # CRC32 consistent-hash ring with virtual nodes and overrides
 │   ├── transport.go     # Transport and TransportHealthChecker interfaces
-│   ├── redis_transport.go # Redis pub/sub Transport implementation
+│   ├── redis_transport.go        # Redis pub/sub Transport implementation
+│   ├── memberlist_transport.go   # HashiCorp memberlist P2P gossip Transport implementation
 │   ├── dialer.go        # PeerDialer interface for forwarding ops to remote owners
 │   ├── ownership.go     # OwnershipStore interface for persistent Claim records
 │   ├── options.go       # SyncStore options (heartbeat, failure timeout, vnodes, …)
