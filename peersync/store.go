@@ -40,9 +40,14 @@ const (
 
 // replicationMsg carries a single Set or Delete operation to peer nodes.
 //
-// applyReplication calls local.Set, which auto-increments the version in
-// the local store. Version here is used for best-effort out-of-order
-// detection only; versions will diverge across nodes after replication.
+// WrittenAt is the Unix-nanosecond wall-clock time at the originating node.
+// applyReplication uses it for last-write-wins (LWW) tiebreaking: a message
+// is skipped if the local copy has a strictly newer UpdatedAt timestamp.
+// When WrittenAt is zero (messages from older peers), the check is skipped
+// and the write is applied unconditionally (safe degradation).
+//
+// Note: local.Set auto-increments the version in the local store so Version
+// values diverge across nodes; Version is retained here for observability.
 type replicationMsg struct {
 	NodeID    string `json:"src"`
 	Namespace string `json:"ns"`
@@ -51,6 +56,7 @@ type replicationMsg struct {
 	Data      []byte `json:"d,omitempty"`
 	Codec     string `json:"c,omitempty"`
 	Version   int64  `json:"v,omitempty"`
+	WrittenAt int64  `json:"wt,omitempty"` // Unix nanoseconds, for LWW tiebreak
 }
 
 type nodeState struct {
@@ -268,6 +274,7 @@ func (s *SyncStore) publishReplication(ctx context.Context, namespace, key strin
 		Data:      data,
 		Codec:     v.Codec(),
 		Version:   v.Metadata().Version(),
+		WrittenAt: v.Metadata().UpdatedAt().UnixNano(),
 	}
 	inner, err := json.Marshal(rm)
 	if err != nil {
@@ -447,8 +454,24 @@ func (s *SyncStore) applyReplication(ctx context.Context, rm replicationMsg) {
 		}
 		return
 	}
+
+	// LWW tiebreak: if the local copy is strictly newer, skip this write.
+	// WrittenAt == 0 means the message came from an older peer; apply unconditionally.
+	if rm.WrittenAt > 0 {
+		writtenAt := time.Unix(0, rm.WrittenAt)
+		if cur, err := s.local.Get(ctx, rm.Namespace, rm.Key); err == nil {
+			if updatedAt := cur.Metadata().UpdatedAt(); !updatedAt.IsZero() && updatedAt.After(writtenAt) {
+				return // local copy is newer; discard the stale replication
+			}
+		}
+	}
+
+	writtenAt := time.Time{}
+	if rm.WrittenAt > 0 {
+		writtenAt = time.Unix(0, rm.WrittenAt)
+	}
 	v, err := config.NewValueFromBytes(ctx, rm.Data, rm.Codec,
-		config.WithValueMetadata(rm.Version, time.Time{}, time.Time{}),
+		config.WithValueMetadata(rm.Version, writtenAt, writtenAt),
 	)
 	if err != nil {
 		s.opts.logger.Error("peersync: decode replicated value — message dropped",

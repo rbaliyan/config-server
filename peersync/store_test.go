@@ -476,6 +476,55 @@ func TestSyncStore_Health(t *testing.T) {
 	}
 }
 
+// TestSyncStore_LWWTiebreak verifies that a replication message with an older
+// WrittenAt is discarded when the local value has a strictly newer timestamp.
+func TestSyncStore_LWWTiebreak(t *testing.T) {
+	ctx := context.Background()
+	tr := &memTransport{}
+
+	local := memory.NewStore()
+	b, err := New(local, Member{ID: "nodeB", Addr: "nodeB:9000"}, tr)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := b.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Close(ctx) })
+
+	// Write a value to nodeB's local store; the memory store stamps updatedAt=now.
+	if _, err := b.local.Set(ctx, "ns", "k", config.NewValue("newer")); err != nil {
+		t.Fatalf("local Set: %v", err)
+	}
+
+	// Craft a replication message with a WrittenAt 10 seconds in the past.
+	olderTime := time.Now().Add(-10 * time.Second)
+	val := config.NewValue("older")
+	data, _ := val.Marshal(ctx)
+	rm := replicationMsg{
+		NodeID:    "nodeA",
+		Namespace: "ns",
+		Key:       "k",
+		Type:      replSet,
+		Data:      data,
+		Codec:     val.Codec(),
+		WrittenAt: olderTime.UnixNano(),
+	}
+
+	// Apply it directly (simulates receiving on a transport).
+	b.applyReplication(ctx, rm)
+
+	// nodeB's local value must still be "newer" — LWW discarded the stale write.
+	got, err := b.Get(ctx, "ns", "k")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	s, _ := got.String()
+	if s == "older" {
+		t.Fatal("LWW: stale replication overwrote newer local value")
+	}
+}
+
 // TestSyncStore_ConcurrentPin verifies that concurrent Pin calls on the same
 // store do not race or corrupt ring state.
 func TestSyncStore_ConcurrentPin(t *testing.T) {
