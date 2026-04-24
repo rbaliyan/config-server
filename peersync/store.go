@@ -78,6 +78,11 @@ type SyncStore struct {
 
 	nodesMu sync.RWMutex
 	nodes   map[string]*nodeState
+	// evicted tracks nodes removed by the failure detector with their eviction
+	// time. seedNodesFromState refuses to resurrect a node within 2× the
+	// failure timeout after eviction, preventing gossip replay from
+	// indefinitely deferring a dead node's removal.
+	evicted map[string]time.Time
 
 	ringChangeCh chan struct{}
 
@@ -113,6 +118,7 @@ func New(local config.Store, self Member, transport Transport, opts ...Option) (
 		transport:    transport,
 		opts:         o,
 		nodes:        make(map[string]*nodeState),
+		evicted:      make(map[string]time.Time),
 		ringChangeCh: make(chan struct{}, 1),
 		ctx:          ctx,
 		cancel:       cancel,
@@ -331,7 +337,12 @@ func (s *SyncStore) handleMessage(raw []byte) {
 		if err := json.Unmarshal(env.Payload, &state); err != nil {
 			return
 		}
-		s.ring.Apply(state)
+		if s.ring.Apply(state) {
+			// After every apply, remove greylisted nodes that the incoming
+			// state may have re-introduced. This ensures evictions propagate
+			// even when a peer's ring snapshot predates the eviction.
+			s.scrubGreylisted()
+		}
 		s.seedNodesFromState(state)
 	case msgReplication:
 		var rm replicationMsg
@@ -349,16 +360,44 @@ func (s *SyncStore) handleMessage(raw []byte) {
 	}
 }
 
+// scrubGreylisted removes any currently-greylisted nodes from the ring after
+// an Apply, preventing gossip replays from resurrecting recently evicted nodes.
+func (s *SyncStore) scrubGreylisted() {
+	now := time.Now()
+	grace := 2 * s.opts.failureTimeout
+	s.nodesMu.RLock()
+	var toRemove []string
+	for id, evictedAt := range s.evicted {
+		if now.Sub(evictedAt) < grace {
+			toRemove = append(toRemove, id)
+		}
+	}
+	s.nodesMu.RUnlock()
+	for _, id := range toRemove {
+		s.ring.Remove(id)
+	}
+}
+
 // seedNodesFromState seeds s.nodes from a received RingState so that the
 // failure detector can evict nodes that were added via ring-change messages
 // but never sent a heartbeat to this node.
+//
+// Nodes present in the evicted greylist are skipped for 2× the failure timeout
+// to prevent gossip replays from indefinitely resurrecting dead nodes.
 func (s *SyncStore) seedNodesFromState(state RingState) {
 	now := time.Now()
+	grace := 2 * s.opts.failureTimeout
 	s.nodesMu.Lock()
 	defer s.nodesMu.Unlock()
 	for _, m := range state.Members {
 		if m.ID == s.self.ID {
 			continue
+		}
+		if evictedAt, ok := s.evicted[m.ID]; ok {
+			if now.Sub(evictedAt) < grace {
+				continue // still within greylist window; do not resurrect
+			}
+			delete(s.evicted, m.ID) // grace period expired; allow re-admission
 		}
 		if _, exists := s.nodes[m.ID]; !exists {
 			s.nodes[m.ID] = &nodeState{member: m, lastSeen: now}
@@ -465,7 +504,9 @@ func (s *SyncStore) failureDetectLoop() {
 }
 
 func (s *SyncStore) detectFailures() {
-	deadline := time.Now().Add(-s.opts.failureTimeout)
+	now := time.Now()
+	deadline := now.Add(-s.opts.failureTimeout)
+	greylistCutoff := now.Add(-2 * s.opts.failureTimeout)
 
 	s.nodesMu.Lock()
 	var dead []string
@@ -479,6 +520,13 @@ func (s *SyncStore) detectFailures() {
 	}
 	for _, id := range dead {
 		delete(s.nodes, id)
+		s.evicted[id] = now
+	}
+	// Prune expired greylist entries to bound map growth.
+	for id, t := range s.evicted {
+		if t.Before(greylistCutoff) {
+			delete(s.evicted, id)
+		}
 	}
 	s.nodesMu.Unlock()
 

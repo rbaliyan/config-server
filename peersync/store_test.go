@@ -331,6 +331,71 @@ func TestRing_StaleApplyRejected(t *testing.T) {
 	}
 }
 
+// TestSyncStore_EvictedNodeNotResurrected verifies that a node removed by the
+// failure detector cannot be immediately re-added by a ring-change gossip
+// message that still includes it (eviction greylist).
+func TestSyncStore_EvictedNodeNotResurrected(t *testing.T) {
+	tr := &memTransport{}
+	ctx := context.Background()
+
+	timeout := 60 * time.Millisecond
+	a, _ := New(memory.NewStore(), Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
+		WithHeartbeatInterval(20*time.Millisecond),
+		WithFailureTimeout(timeout),
+	)
+	_ = a.Connect(ctx)
+	defer func() { _ = a.Close(ctx) }()
+
+	// Inject a ring-change that adds nodeD; it never heartbeats.
+	state := RingState{
+		Members: []Member{
+			{ID: "nodeA", Addr: "nodeA:9000"},
+			{ID: "nodeD", Addr: "nodeD:9000"},
+		},
+		Epoch: a.ring.Epoch() + 5,
+	}
+	inner, _ := json.Marshal(state)
+	env := message{Type: msgRingChange, Payload: inner}
+	payload, _ := json.Marshal(env)
+	tr.mu.Lock()
+	handlers := make([]func([]byte), len(tr.handlers))
+	copy(handlers, tr.handlers)
+	tr.mu.Unlock()
+	for _, h := range handlers {
+		h(payload)
+	}
+
+	// Wait for failure detector to evict nodeD.
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !a.ring.Has("nodeD") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if a.ring.Has("nodeD") {
+		t.Fatal("nodeD was not evicted")
+	}
+
+	// Re-inject the same ring-change (same epoch already applied + 1 to bypass
+	// epoch check). This simulates a peer that still has nodeD in its ring.
+	state2 := RingState{
+		Members: state.Members,
+		Epoch:   a.ring.Epoch() + 1,
+	}
+	inner2, _ := json.Marshal(state2)
+	env2 := message{Type: msgRingChange, Payload: inner2}
+	payload2, _ := json.Marshal(env2)
+	for _, h := range handlers {
+		h(payload2)
+	}
+
+	// nodeD must NOT be resurrected within the greylist window.
+	if a.ring.Has("nodeD") {
+		t.Fatal("evicted nodeD was resurrected by gossip replay within greylist window")
+	}
+}
+
 // TestSyncStore_CloseBeforeConnect verifies Close is safe when called on a
 // store that was never Connected (ctx is initialised in New, not Connect).
 func TestSyncStore_CloseBeforeConnect(t *testing.T) {
