@@ -95,6 +95,7 @@ type SyncStore struct {
 }
 
 var _ config.Store = (*SyncStore)(nil)
+var _ config.HealthChecker = (*SyncStore)(nil)
 
 // New creates a SyncStore wrapping local. self identifies this node; transport
 // is the shared pub/sub channel used for gossip and replication.
@@ -437,8 +438,12 @@ func (s *SyncStore) handleHeartbeat(hb heartbeatMsg) {
 // out-of-order detection. Versions will diverge across nodes after replication.
 func (s *SyncStore) applyReplication(ctx context.Context, rm replicationMsg) {
 	if rm.Type == replDelete {
-		if err := s.local.Delete(ctx, rm.Namespace, rm.Key); err != nil {
-			s.opts.logger.Warn("peersync: apply deletion", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
+		err := s.local.Delete(ctx, rm.Namespace, rm.Key)
+		// ErrNotFound is expected when the delete arrives after a re-create
+		// or when the key never existed on this node — not a divergence.
+		if err != nil && !config.IsNotFound(err) {
+			s.opts.logger.Error("peersync: apply deletion — key may diverge until re-deleted",
+				"src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
 		}
 		return
 	}
@@ -446,11 +451,13 @@ func (s *SyncStore) applyReplication(ctx context.Context, rm replicationMsg) {
 		config.WithValueMetadata(rm.Version, time.Time{}, time.Time{}),
 	)
 	if err != nil {
-		s.opts.logger.Error("peersync: decode replicated value", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
+		s.opts.logger.Error("peersync: decode replicated value — message dropped",
+			"src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
 		return
 	}
 	if _, err := s.local.Set(ctx, rm.Namespace, rm.Key, v); err != nil {
-		s.opts.logger.Warn("peersync: apply set", "src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
+		s.opts.logger.Error("peersync: apply set — key will diverge until re-written",
+			"src", rm.NodeID, "ns", rm.Namespace, "key", rm.Key, "err", err)
 	}
 }
 

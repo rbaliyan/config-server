@@ -44,9 +44,10 @@ func WithHeartbeatInterval(d time.Duration) Option {
 	}
 }
 
-// WithPublishTimeout sets the per-call deadline applied to Publish in the
-// heartbeat and announce background loops. Defaults to the heartbeat interval.
-// Values ≤ 0 are ignored.
+// WithPublishTimeout overrides the per-call deadline applied to Publish in the
+// heartbeat and announce background loops. When not set (or set to ≤ 0), the
+// publish timeout tracks the heartbeat interval. Call WithPublishTimeout after
+// WithHeartbeatInterval if you want an independent value.
 func WithPublishTimeout(d time.Duration) Option {
 	return func(o *options) {
 		if d > 0 {
