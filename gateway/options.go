@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"crypto/tls"
+	"net/http"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/rbaliyan/config-server/dashboard"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -131,6 +133,30 @@ func resolveEventBufferSize(requested *int) int {
 		return defaultEventBufferSize
 	}
 	return *requested
+}
+
+// newResolvedOptions applies opts and fills in defaults for any field left
+// unset so that call sites do not need to re-resolve them.
+func newResolvedOptions(opts []Option) *options {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.heartbeatInterval <= 0 {
+		o.heartbeatInterval = defaultHeartbeatInterval
+	}
+	if o.dashboardPath == "" {
+		o.dashboardPath = defaultDashboardPath
+	}
+	return o
+}
+
+// dashHandler returns the dashboard HTTP handler when enabled, or nil.
+func (o *options) dashHandler() http.Handler {
+	if !o.dashboardEnabled {
+		return nil
+	}
+	return dashboard.Handler(o.dashboardPath, "")
 }
 
 // buildDialOpts constructs the gRPC dial options from configuration.

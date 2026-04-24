@@ -48,13 +48,16 @@ func (s *Service) Snapshot(ctx context.Context, req *configpb.SnapshotRequest) (
 }
 
 // collectAllEntries paginates through store.Find to collect all entries in a namespace.
+// Returns ResourceExhausted as soon as the accumulated entry count would exceed
+// the configured cap, even on the last page, to bound worst-case memory use.
 func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*configpb.Entry, error) {
-	var all []*configpb.Entry
+	const pageLimit = 500
+	cap := s.opts.maxSnapshotEntries
+	all := make([]*configpb.Entry, 0)
 	cursor := ""
-	limit := 500
 
 	for {
-		fb := config.NewFilter().WithPrefix("").WithLimit(limit)
+		fb := config.NewFilter().WithLimit(pageLimit)
 		if cursor != "" {
 			fb = fb.WithCursor(cursor)
 		}
@@ -66,6 +69,10 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 
 		results := page.Results()
 		for key, val := range results {
+			if len(all) >= cap {
+				return nil, status.Errorf(codes.ResourceExhausted,
+					"snapshot exceeds maximum entry count (%d)", cap)
+			}
 			entry, err := valueToProto(ctx, namespace, key, val)
 			if err != nil {
 				return nil, err
@@ -73,21 +80,13 @@ func (s *Service) collectAllEntries(ctx context.Context, namespace string) ([]*c
 			all = append(all, entry)
 		}
 
-		// Stop if this is the last page: fewer results than requested or no next cursor.
-		if len(results) < limit || page.NextCursor() == "" {
+		if len(results) < pageLimit || page.NextCursor() == "" {
 			break
 		}
-
-		// Guard against unbounded growth that could exhaust server memory.
-		if len(all) >= s.opts.maxSnapshotEntries {
-			return nil, status.Errorf(codes.ResourceExhausted,
-				"snapshot exceeds maximum entry count (%d)", s.opts.maxSnapshotEntries)
-		}
-
 		cursor = page.NextCursor()
 	}
 
-	// Sort by key for deterministic ETag
+	// Sort by key for a deterministic ETag.
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].Key < all[j].Key
 	})

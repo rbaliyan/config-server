@@ -242,41 +242,23 @@ func TestWatchResult(t *testing.T) {
 
 	close(doneCh)
 
-	var (
-		once     sync.Once
-		watchErr error
-	)
 	result := &WatchResult{
-		Events: ch,
-		Err: func() error {
-			once.Do(func() {
-				<-doneCh
-				select {
-				case watchErr = <-errCh:
-				default:
-				}
-			})
-			return watchErr
-		},
-		Stop: func() {},
+		events: ch,
+		errCh:  errCh,
+		doneCh: doneCh,
+		cancel: func() {},
 	}
 
-	if result.Events == nil {
+	if result.Events() == nil {
 		t.Error("Events channel should not be nil")
-	}
-
-	if result.Err == nil {
-		t.Error("Err function should not be nil")
-	}
-
-	if result.Stop == nil {
-		t.Error("Stop function should not be nil")
 	}
 
 	// Test normal closure (no error)
 	if err := result.Err(); err != nil {
 		t.Errorf("Err() = %v, want nil", err)
 	}
+
+	result.Stop() // should not panic
 }
 
 func TestWatchResult_WithError(t *testing.T) {
@@ -288,23 +270,11 @@ func TestWatchResult_WithError(t *testing.T) {
 	errCh <- testErr
 	close(doneCh)
 
-	var (
-		once     sync.Once
-		watchErr error
-	)
 	result := &WatchResult{
-		Events: ch,
-		Err: func() error {
-			once.Do(func() {
-				<-doneCh
-				select {
-				case watchErr = <-errCh:
-				default:
-				}
-			})
-			return watchErr
-		},
-		Stop: func() {},
+		events: ch,
+		errCh:  errCh,
+		doneCh: doneCh,
+		cancel: func() {},
 	}
 
 	// First call should return the error.
@@ -1195,7 +1165,7 @@ func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 	}
 
 	// Drain the events channel
-	for range result.Events {
+	for range result.Events() {
 	}
 
 	watchErr := result.Err()
@@ -1238,7 +1208,7 @@ func TestWatchLoop_MaxErrorsRespected(t *testing.T) {
 	}
 
 	// Drain the events channel
-	for range result.Events {
+	for range result.Events() {
 	}
 
 	watchErr := result.Err()
@@ -1301,7 +1271,7 @@ func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
 
 	// Read at least one event
 	select {
-	case evt, ok := <-result.Events:
+	case evt, ok := <-result.Events():
 		if !ok {
 			// Channel closed, check error
 			break
@@ -1322,7 +1292,7 @@ func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
 		t.Fatal("timed out waiting for watch to finish")
 	default:
 		// Drain remaining events
-		for range result.Events {
+		for range result.Events() {
 		}
 	}
 }
@@ -1360,7 +1330,7 @@ func TestWatchLoop_OnWatchErrorCallback(t *testing.T) {
 		t.Fatalf("WatchWithResult failed: %v", err)
 	}
 
-	for range result.Events {
+	for range result.Events() {
 	}
 
 	_ = result.Err()
@@ -1420,7 +1390,7 @@ func TestWatchLoop_StoreCloseDuringWatch(t *testing.T) {
 	store.Close(context.Background())
 
 	// Drain events
-	for range result.Events {
+	for range result.Events() {
 	}
 
 	watchErr := result.Err()
@@ -1500,7 +1470,7 @@ func TestWatchStream_DeleteChangeType(t *testing.T) {
 		t.Fatalf("WatchWithResult failed: %v", err)
 	}
 
-	evt := <-result.Events
+	evt := <-result.Events()
 	if evt.Type != config.ChangeTypeDelete {
 		t.Errorf("expected ChangeTypeDelete, got %v", evt.Type)
 	}
@@ -1509,7 +1479,7 @@ func TestWatchStream_DeleteChangeType(t *testing.T) {
 	}
 
 	// Drain remaining
-	for range result.Events {
+	for range result.Events() {
 	}
 }
 
@@ -1556,12 +1526,12 @@ func TestWatchStream_NilEntry(t *testing.T) {
 		t.Fatalf("WatchWithResult failed: %v", err)
 	}
 
-	evt := <-result.Events
+	evt := <-result.Events()
 	if evt.Key != "valid-key" {
 		t.Errorf("expected key 'valid-key' (nil entry skipped), got %q", evt.Key)
 	}
 
-	for range result.Events {
+	for range result.Events() {
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rbaliyan/config"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -165,5 +166,65 @@ func TestRemoteError(t *testing.T) {
 	expected := "config: remote error (Internal): server error"
 	if err.Error() != expected {
 		t.Errorf("RemoteError.Error() = %q, want %q", err.Error(), expected)
+	}
+}
+
+// TestFromGRPCError_ErrorInfo verifies that sentinel errors carried via
+// errdetails.ErrorInfo take precedence over code/message heuristics.
+func TestFromGRPCError_ErrorInfo(t *testing.T) {
+	tests := []struct {
+		reason string
+		want   error
+	}{
+		{reasonNotFound, config.ErrNotFound},
+		{reasonKeyExists, config.ErrKeyExists},
+		{reasonInvalidKey, config.ErrInvalidKey},
+		{reasonInvalidNamespace, config.ErrInvalidNamespace},
+		{reasonInvalidValue, config.ErrInvalidValue},
+		{reasonTypeMismatch, config.ErrTypeMismatch},
+		{reasonReadOnly, config.ErrReadOnly},
+		{reasonStoreNotConnected, config.ErrStoreNotConnected},
+		{reasonStoreClosed, config.ErrStoreClosed},
+		{reasonWatchNotSupported, config.ErrWatchNotSupported},
+		{reasonVersionNotFound, config.ErrVersionNotFound},
+		{reasonVersioningUnsupported, config.ErrVersioningNotSupported},
+		{reasonAliasExists, config.ErrAliasExists},
+		{reasonAliasSelf, config.ErrAliasSelf},
+		{reasonAliasChain, config.ErrAliasChain},
+		{reasonCodecNotFound, config.ErrCodecNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			st := status.New(codes.Internal, "ignored")
+			detailed, err := st.WithDetails(&errdetails.ErrorInfo{
+				Reason: tt.reason,
+				Domain: errorInfoDomain,
+			})
+			if err != nil {
+				t.Fatalf("WithDetails: %v", err)
+			}
+			got := fromGRPCError(detailed.Err())
+			if !errors.Is(got, tt.want) {
+				t.Errorf("fromGRPCError(reason=%s) = %v, want %v", tt.reason, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFromGRPCError_UnknownDomainIgnored verifies that ErrorInfo details with a
+// foreign domain do not hijack the mapping; the code/message fallback wins.
+func TestFromGRPCError_UnknownDomainIgnored(t *testing.T) {
+	st := status.New(codes.NotFound, "key not found")
+	detailed, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: reasonVersionNotFound,
+		Domain: "some.other.domain",
+	})
+	if err != nil {
+		t.Fatalf("WithDetails: %v", err)
+	}
+	got := fromGRPCError(detailed.Err())
+	if !errors.Is(got, config.ErrNotFound) {
+		t.Errorf("fromGRPCError() = %v, want ErrNotFound", got)
 	}
 }

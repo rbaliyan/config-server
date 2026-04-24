@@ -1,6 +1,10 @@
 package peersync
 
-import "context"
+import (
+	"context"
+	"log/slog"
+	"runtime/debug"
+)
 
 // msgType identifies the purpose of a cluster message.
 type msgType uint8
@@ -89,8 +93,18 @@ type MembershipTransport interface {
 }
 
 // safeCall invokes fn(arg) and recovers from any panic so that a misbehaving
-// handler cannot crash the transport's background goroutine.
+// handler cannot crash the transport's background goroutine. Recovered panics
+// are logged at error level with a stack trace via slog.Default so that silent
+// failures are observable; callers that need custom reporting should wrap fn
+// in their own recover before passing it in.
 func safeCall[T any](fn func(T), arg T) {
-	defer func() { recover() }() //nolint:errcheck
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("peersync: handler panicked",
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
 	fn(arg)
 }

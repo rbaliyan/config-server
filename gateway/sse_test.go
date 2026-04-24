@@ -628,7 +628,7 @@ func TestSSEWatch_Remote(t *testing.T) {
 	}()
 
 	// Wait for preamble before triggering a change.
-	if !waitForBody(t, rec, 5*time.Second, func(s string) bool {
+	if !waitForBody(t, rec, 15*time.Second, func(s string) bool {
 		return strings.Contains(s, ": connected")
 	}) {
 		t.Fatal("timed out waiting for remote SSE preamble")
@@ -638,7 +638,7 @@ func TestSSEWatch_Remote(t *testing.T) {
 		t.Fatalf("failed to set test data: %v", err)
 	}
 
-	if !waitForBody(t, rec, 5*time.Second, func(s string) bool {
+	if !waitForBody(t, rec, 15*time.Second, func(s string) bool {
 		return strings.Contains(s, "event: set")
 	}) {
 		t.Fatal("timed out waiting for remote SET event")

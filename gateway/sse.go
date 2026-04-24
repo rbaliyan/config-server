@@ -141,6 +141,10 @@ func responseToSSEEvent(resp *configpb.WatchResponse) sseEvent {
 		evt.Type = "SET"
 	case configpb.ChangeType_CHANGE_TYPE_DELETE:
 		evt.Type = "DELETE"
+	case configpb.ChangeType_CHANGE_TYPE_ALIAS_SET:
+		evt.Type = "ALIAS_SET"
+	case configpb.ChangeType_CHANGE_TYPE_ALIAS_DELETE:
+		evt.Type = "ALIAS_DELETE"
 	default:
 		evt.Type = "UNKNOWN"
 	}

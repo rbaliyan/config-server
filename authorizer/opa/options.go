@@ -10,6 +10,7 @@ type options struct {
 	subjectClaim       string        // JWT claim used as UserID; default "sub"
 	bundlePollInterval time.Duration // for NewBundleAuthorizer; default 30s
 	tlsConfig          *tls.Config   // for bundle HTTP fetching
+	jwtVerifier        JWTVerifier   // optional; replaces no-op parseJWTClaims when set
 }
 
 func defaultOptions() options {
@@ -50,5 +51,20 @@ func WithBundlePollInterval(d time.Duration) Option {
 func WithTLSConfig(cfg *tls.Config) Option {
 	return func(o *options) {
 		o.tlsConfig = cfg
+	}
+}
+
+// WithJWTVerifier sets a JWTVerifier that is called during Authenticate to
+// validate the incoming token's signature and standard claims (expiry,
+// audience, etc.). When set, it replaces the default no-op claim parser that
+// only base64-decodes without verification. A nil value is ignored.
+//
+// Use NewHMACVerifier, NewRSAVerifier, or NewJWKSVerifier from this package,
+// or supply your own implementation of the JWTVerifier interface.
+func WithJWTVerifier(v JWTVerifier) Option {
+	return func(o *options) {
+		if v != nil {
+			o.jwtVerifier = v
+		}
 	}
 }

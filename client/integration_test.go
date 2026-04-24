@@ -199,7 +199,7 @@ func TestIntegration_Watch(t *testing.T) {
 
 	// Wait for the event.
 	select {
-	case event, ok := <-watchResult.Events:
+	case event, ok := <-watchResult.Events():
 		if !ok {
 			t.Fatal("watch channel closed unexpectedly")
 		}
@@ -225,7 +225,7 @@ func TestIntegration_Watch(t *testing.T) {
 	}
 
 	select {
-	case event, ok := <-watchResult.Events:
+	case event, ok := <-watchResult.Events():
 		if !ok {
 			t.Fatal("watch channel closed unexpectedly")
 		}

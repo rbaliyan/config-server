@@ -209,6 +209,9 @@ func New(store config.Store, self Member, transport Transport, opts ...Option) (
 	}, nil
 }
 
+// Self returns this node's Member record (ID and address).
+func (s *SyncStore) Self() Member { return s.self }
+
 // Members returns the current set of registered members in the ring.
 // The returned slice is a copy; callers may mutate it freely.
 func (s *SyncStore) Members() []Member { return s.ring.Members() }
