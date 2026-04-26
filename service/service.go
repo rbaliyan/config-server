@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"math"
+	"time"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
@@ -64,6 +67,31 @@ func (s *Service) authorize(ctx context.Context, action string, resource Resourc
 		return status.Errorf(codes.PermissionDenied, "%s", decision.Reason)
 	}
 	return nil
+}
+
+// record writes an audit entry if an Auditor is configured. Errors are logged
+// but never propagated — audit failures must not disrupt config writes.
+func (s *Service) record(ctx context.Context, entry AuditEntry) {
+	if s.opts.auditor == nil {
+		return
+	}
+	if err := s.opts.auditor.Record(ctx, entry); err != nil {
+		slog.Default().ErrorContext(ctx, "audit record failed",
+			"operation", entry.Operation,
+			"namespace", entry.Namespace,
+			"key", entry.Key,
+			"error", err,
+		)
+	}
+}
+
+// auditIdentity returns the Identity in ctx, or an anonymous placeholder.
+func auditIdentity(ctx context.Context) Identity {
+	id, ok := IdentityFromContext(ctx)
+	if !ok || id == nil {
+		return anonymousIdentity{}
+	}
+	return id
 }
 
 // validateNamespaceKey checks that namespace and key are non-empty.
@@ -145,6 +173,16 @@ func (s *Service) Set(ctx context.Context, req *configpb.SetRequest) (*configpb.
 		return nil, toGRPCError(err)
 	}
 
+	s.record(ctx, AuditEntry{
+		Timestamp: time.Now(),
+		Identity:  auditIdentity(ctx),
+		Operation: "set",
+		Namespace: req.Namespace,
+		Key:       req.Key,
+		Value:     base64.StdEncoding.EncodeToString(req.Value),
+		Codec:     codecName,
+	})
+
 	entry, err := valueToProto(ctx, req.Namespace, req.Key, result)
 	if err != nil {
 		return nil, toGRPCError(err)
@@ -167,6 +205,14 @@ func (s *Service) Delete(ctx context.Context, req *configpb.DeleteRequest) (*con
 	if err := s.store.Delete(ctx, req.Namespace, req.Key); err != nil {
 		return nil, toGRPCError(err)
 	}
+
+	s.record(ctx, AuditEntry{
+		Timestamp: time.Now(),
+		Identity:  auditIdentity(ctx),
+		Operation: "delete",
+		Namespace: req.Namespace,
+		Key:       req.Key,
+	})
 
 	return &configpb.DeleteResponse{}, nil
 }

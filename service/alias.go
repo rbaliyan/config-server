@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/rbaliyan/config"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
@@ -41,6 +42,14 @@ func (s *Service) SetAlias(ctx context.Context, req *configpb.SetAliasRequest) (
 		return nil, toGRPCError(err)
 	}
 
+	s.record(ctx, AuditEntry{
+		Timestamp: time.Now(),
+		Identity:  auditIdentity(ctx),
+		Operation: "alias_set",
+		Key:       req.Alias,
+		Metadata:  map[string]string{"target": req.Target},
+	})
+
 	return &configpb.SetAliasResponse{
 		Alias: aliasToProto(req.Alias, req.Target, val),
 	}, nil
@@ -63,6 +72,13 @@ func (s *Service) DeleteAlias(ctx context.Context, req *configpb.DeleteAliasRequ
 	if err := as.DeleteAlias(ctx, req.Alias); err != nil {
 		return nil, toGRPCError(err)
 	}
+
+	s.record(ctx, AuditEntry{
+		Timestamp: time.Now(),
+		Identity:  auditIdentity(ctx),
+		Operation: "alias_delete",
+		Key:       req.Alias,
+	})
 
 	return &configpb.DeleteAliasResponse{}, nil
 }

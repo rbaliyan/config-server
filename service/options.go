@@ -3,6 +3,7 @@ package service
 // serviceOptions holds configuration for the Service.
 type serviceOptions struct {
 	guard              SecurityGuard
+	auditor            Auditor
 	maxSnapshotEntries int
 	maxValueSize       int
 	maxWatchFilters    int
@@ -50,6 +51,16 @@ func WithMaxValueSize(n int) Option {
 	return func(o *serviceOptions) {
 		if n > 0 {
 			o.maxValueSize = n
+		}
+	}
+}
+
+// WithAuditor sets the Auditor used to record config mutation events.
+// If a is nil, the option is ignored and auditing remains disabled.
+func WithAuditor(a Auditor) Option {
+	return func(o *serviceOptions) {
+		if a != nil {
+			o.auditor = a
 		}
 	}
 }
