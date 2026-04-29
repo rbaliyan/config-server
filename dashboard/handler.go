@@ -14,6 +14,11 @@ import (
 	"sync"
 )
 
+// scriptClose is the only byte sequence that must be escaped when injecting
+// JSON into a <script> text node — it would prematurely close the tag.
+const scriptClose = "</script>"
+const scriptCloseEscaped = `<\/script>`
+
 //go:embed static
 var staticFS embed.FS
 
@@ -29,8 +34,8 @@ var staticFS embed.FS
 //   - auth.Middleware wraps the handler so unauthenticated requests are
 //     rejected before the static files are served.
 //   - auth.ClientConfig() is JSON-encoded and injected into index.html as
-//     the "auth-config" meta tag so the dashboard JS knows how to attach
-//     credentials to every config API request it makes.
+//     the text content of the "auth-config" script tag so the dashboard JS
+//     knows how to attach credentials to every config API request it makes.
 //
 // Pass nil for auth to serve the dashboard without any access control
 // (suitable when the route is protected at the network or reverse-proxy level).
@@ -69,10 +74,14 @@ func Handler(mountPath, apiBase string, auth DashboardAuth) http.Handler {
 				[]byte(`<meta id="api-base" content="`+html.EscapeString(apiBase)+`">`),
 				1,
 			)
-			// Inject auth client config into the "auth-config" meta tag.
+			// Inject auth client config into the auth-config script tag as
+			// JSON text content. Using a <script type="application/json"> tag
+			// avoids HTML attribute quoting entirely — the only sequence that
+			// needs escaping is "</script>" which would close the tag early.
+			safeJSON := strings.ReplaceAll(string(authConfigJSON), scriptClose, scriptCloseEscaped)
 			b = bytes.Replace(b,
-				[]byte(`<meta id="auth-config" content="">`),
-				[]byte(`<meta id="auth-config" content="`+html.EscapeString(string(authConfigJSON))+`">`),
+				[]byte(`<script id="auth-config" type="application/json"></script>`),
+				[]byte(`<script id="auth-config" type="application/json">`+safeJSON+`</script>`),
 				1,
 			)
 			indexBytes = b

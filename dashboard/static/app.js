@@ -9,7 +9,8 @@ const API_BASE = (document.getElementById('api-base') || {}).content || '';
 //   auth-header      — header name for bearer auth (default: "Authorization")
 const AUTH_CONFIG = (() => {
   try {
-    return JSON.parse((document.getElementById('auth-config') || {}).content || '{}');
+    const el = document.getElementById('auth-config');
+    return JSON.parse(el ? el.textContent : '{}');
   } catch (_) { return {}; }
 })();
 const AUTH_TYPE = AUTH_CONFIG['auth-type'] || 'none';
