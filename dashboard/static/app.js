@@ -3,11 +3,43 @@
 // Read API base from meta tag (e.g. "" for same-origin, "/api" for proxied).
 const API_BASE = (document.getElementById('api-base') || {}).content || '';
 
+// Read auth config injected by the server. Recognised keys:
+//   auth-type        — "cookie" | "bearer" | "none" (default: "none")
+//   auth-credentials — fetch credentials mode for cookie auth (default: "same-origin")
+//   auth-header      — header name for bearer auth (default: "Authorization")
+const AUTH_CONFIG = (() => {
+  try {
+    return JSON.parse((document.getElementById('auth-config') || {}).content || '{}');
+  } catch (_) { return {}; }
+})();
+const AUTH_TYPE = AUTH_CONFIG['auth-type'] || 'none';
+
+// Bearer token — stored in sessionStorage so it survives page refreshes
+// within the same tab but is cleared when the tab closes.
+const BEARER_TOKEN_KEY = 'dashboard:bearer-token';
+let bearerToken = sessionStorage.getItem(BEARER_TOKEN_KEY) || '';
+
 // ── State ──────────────────────────────────────────────────────────────────
 let currentNamespace = '';
 let currentCursor    = '';
 let totalLoaded      = 0;
 const recentNS       = []; // last-used namespaces (up to 5)
+
+// ── Auth UI ────────────────────────────────────────────────────────────────
+const authSection   = document.getElementById('auth-section');
+const authInput     = document.getElementById('auth-token-input');
+const authSaveBtn   = document.getElementById('auth-token-save');
+
+if (AUTH_TYPE === 'bearer') {
+  authSection.style.display = 'block';
+  authInput.value = bearerToken;
+}
+
+authSaveBtn.addEventListener('click', () => {
+  bearerToken = authInput.value.trim();
+  sessionStorage.setItem(BEARER_TOKEN_KEY, bearerToken);
+  showToast('Token saved.', 'success');
+});
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const nsInput       = document.getElementById('ns-input');
@@ -79,11 +111,26 @@ async function apiFetch(method, path, body) {
     method,
     headers: { 'Content-Type': 'application/json' },
   };
+
+  if (AUTH_TYPE === 'cookie') {
+    // Let the browser forward the session/JWT cookie automatically.
+    opts.credentials = AUTH_CONFIG['auth-credentials'] || 'include';
+  } else if (AUTH_TYPE === 'bearer') {
+    if (!bearerToken) {
+      throw new Error('No auth token set — enter your token in the sidebar.');
+    }
+    const header = AUTH_CONFIG['auth-header'] || 'Authorization';
+    opts.headers[header] = 'Bearer ' + bearerToken;
+  }
+
   if (body !== undefined) {
     opts.body = JSON.stringify(body);
   }
   const resp = await fetch(API_BASE + path, opts);
   if (!resp.ok) {
+    if (resp.status === 401 && AUTH_TYPE === 'bearer') {
+      throw new Error('Authentication failed — check your token in the sidebar.');
+    }
     const text = await resp.text().catch(() => resp.statusText);
     throw new Error(text || resp.statusText);
   }
