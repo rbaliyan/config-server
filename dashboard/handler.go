@@ -6,11 +6,18 @@ package dashboard
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"html"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 )
+
+// scriptClose is the only byte sequence that must be escaped when injecting
+// JSON into a <script> text node — it would prematurely close the tag.
+const scriptClose = "</script>"
+const scriptCloseEscaped = `<\/script>`
 
 //go:embed static
 var staticFS embed.FS
@@ -22,11 +29,32 @@ var staticFS embed.FS
 // apiBase is the base path prefix used by the dashboard JS when constructing
 // API URLs (e.g. "" for same-origin, "/api" for a proxied deployment).
 // The value is injected into the page via the "api-base" meta tag.
-func Handler(mountPath, apiBase string) http.Handler {
+//
+// auth, if non-nil, is applied in two ways:
+//   - auth.Middleware wraps the handler so unauthenticated requests are
+//     rejected before the static files are served.
+//   - auth.ClientConfig() is JSON-encoded and injected into index.html as
+//     the text content of the "auth-config" script tag so the dashboard JS
+//     knows how to attach credentials to every config API request it makes.
+//
+// Pass nil for auth to serve the dashboard without any access control
+// (suitable when the route is protected at the network or reverse-proxy level).
+func Handler(mountPath, apiBase string, auth DashboardAuth) http.Handler {
 	if mountPath == "" {
 		mountPath = "/dashboard"
 	}
 	fs := http.FileServer(http.FS(staticFS))
+
+	// Pre-marshal the auth client config once — it is static for the
+	// lifetime of this handler.
+	authConfigJSON := []byte("{}")
+	if auth != nil {
+		if b, err := json.Marshal(auth.ClientConfig()); err != nil {
+			slog.Warn("dashboard: failed to marshal auth client config", "error", err)
+		} else {
+			authConfigJSON = b
+		}
+	}
 
 	var (
 		indexOnce  sync.Once
@@ -41,15 +69,28 @@ func Handler(mountPath, apiBase string) http.Handler {
 				return
 			}
 			// Inject apiBase into the "api-base" meta tag so JS can read it.
-			needle := []byte(`<meta id="api-base" content="">`)
-			replacement := []byte(`<meta id="api-base" content="` + html.EscapeString(apiBase) + `">`)
-			indexBytes = bytes.Replace(raw, needle, replacement, 1)
+			b := bytes.Replace(raw,
+				[]byte(`<meta id="api-base" content="">`),
+				[]byte(`<meta id="api-base" content="`+html.EscapeString(apiBase)+`">`),
+				1,
+			)
+			// Inject auth client config into the auth-config script tag as
+			// JSON text content. Using a <script type="application/json"> tag
+			// avoids HTML attribute quoting entirely — the only sequence that
+			// needs escaping is "</script>" which would close the tag early.
+			safeJSON := strings.ReplaceAll(string(authConfigJSON), scriptClose, scriptCloseEscaped)
+			b = bytes.Replace(b,
+				[]byte(`<script id="auth-config" type="application/json"></script>`),
+				[]byte(`<script id="auth-config" type="application/json">`+safeJSON+`</script>`),
+				1,
+			)
+			indexBytes = b
 		})
 		return indexBytes, indexErr
 	}
 
-	return http.StripPrefix(mountPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve the rewritten index.html for the root path so apiBase is present.
+	inner := http.StripPrefix(mountPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Serve the rewritten index.html for the root path so injected values are present.
 		if r.URL.Path == "" || r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			body, err := loadIndex()
 			if err != nil {
@@ -60,8 +101,8 @@ func Handler(mountPath, apiBase string) http.Handler {
 			_, _ = w.Write(body)
 			return
 		}
-		// Block directory-traversal attempts and requests for the raw
-		// index to funnel through the rewritten path.
+		// Block directory-traversal attempts and funnel raw index requests
+		// through the rewritten path above.
 		if strings.Contains(r.URL.Path, "..") {
 			http.NotFound(w, r)
 			return
@@ -69,4 +110,16 @@ func Handler(mountPath, apiBase string) http.Handler {
 		r.URL.Path = "/static" + r.URL.Path
 		fs.ServeHTTP(w, r)
 	}))
+
+	if auth == nil {
+		return inner
+	}
+	// pathAware is an opt-in internal interface. Auth implementations that
+	// need to know the mount path (e.g. to serve a login sub-page) implement
+	// it. Not part of the public DashboardAuth contract.
+	type pathAware interface{ initPath(string) }
+	if pa, ok := auth.(pathAware); ok {
+		pa.initPath(mountPath)
+	}
+	return auth.Middleware(inner)
 }

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta id="api-base" content="">
+  <script id="auth-config" type="application/json"></script>
   <title>Config Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -25,6 +26,14 @@
 
       <div class="sidebar-section">
         <p class="sidebar-hint">Enter a namespace and press Load to browse its keys.</p>
+      </div>
+
+      <div class="sidebar-section" id="auth-section" style="display:none">
+        <label class="sidebar-label" for="auth-token-input">Auth Token</label>
+        <div class="ns-row">
+          <input id="auth-token-input" class="input" type="password" placeholder="Bearer token" autocomplete="off">
+          <button id="auth-token-save" type="button" class="btn btn-secondary">Set</button>
+        </div>
       </div>
 
       <div class="sidebar-section recent-section" id="recent-section" style="display:none">

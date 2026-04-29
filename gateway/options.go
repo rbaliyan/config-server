@@ -24,7 +24,8 @@ type options struct {
 	//   *N (>0) → ring-buffer size
 	eventBufferSize  *int
 	dashboardEnabled bool
-	dashboardPath    string // default "/dashboard"
+	dashboardPath    string              // default "/dashboard"
+	dashboardAuth    dashboard.DashboardAuth // nil = no auth
 }
 
 // Option configures the gateway handler.
@@ -125,6 +126,24 @@ func WithDashboardPath(path string) Option {
 	}
 }
 
+// WithDashboardAuth sets the authentication strategy for the dashboard.
+// The auth value must implement dashboard.DashboardAuth; two built-ins are
+// provided: dashboard.CookieAuth and dashboard.BearerTokenAuth.
+//
+// Server side: auth.Middleware is applied to the dashboard static-file handler
+// so unauthenticated requests are rejected before the files are served.
+//
+// Client side: auth.ClientConfig() is injected into index.html so the
+// embedded JS knows how to attach the same credentials to every config API
+// request it makes.
+//
+// Pass nil (the default) to serve the dashboard without access control.
+func WithDashboardAuth(auth dashboard.DashboardAuth) Option {
+	return func(o *options) {
+		o.dashboardAuth = auth
+	}
+}
+
 // resolveEventBufferSize returns the concrete ring-buffer size.
 // A nil pointer means the user did not call WithEventBufferSize and
 // the default applies; an explicit *0 disables the buffer.
@@ -156,7 +175,7 @@ func (o *options) dashHandler() http.Handler {
 	if !o.dashboardEnabled {
 		return nil
 	}
-	return dashboard.Handler(o.dashboardPath, "")
+	return dashboard.Handler(o.dashboardPath, "", o.dashboardAuth)
 }
 
 // buildDialOpts constructs the gRPC dial options from configuration.
