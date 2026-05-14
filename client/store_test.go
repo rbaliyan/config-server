@@ -1138,6 +1138,14 @@ func (m *mockConfigClient) ListAliases(ctx context.Context, in *configpb.ListAli
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+// ListCodecs is not surfaced by RemoteStore: the registry of codecs lives in
+// the local process (codec.Register) and a server-side encrypted codec cannot
+// be invoked locally without the matching key material from config-crypto. The
+// dashboard calls the gateway endpoint directly; the gRPC client does not.
+func (m *mockConfigClient) ListCodecs(ctx context.Context, in *configpb.ListCodecsRequest, opts ...grpc.CallOption) (*configpb.ListCodecsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),

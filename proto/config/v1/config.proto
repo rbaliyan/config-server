@@ -93,6 +93,15 @@ service ConfigService {
       get: "/v1/aliases"
     };
   }
+
+  // ListCodecs returns the names of all codecs registered on the server.
+  // Clients use this to discover which codecs (including encrypted variants
+  // from config-crypto) are supported for Set requests.
+  rpc ListCodecs(ListCodecsRequest) returns (ListCodecsResponse) {
+    option (google.api.http) = {
+      get: "/v1/codecs"
+    };
+  }
 }
 
 // GetRequest is the request for Get.
@@ -248,6 +257,22 @@ message ListAliasesRequest {}
 // ListAliasesResponse is the response for ListAliases.
 message ListAliasesResponse {
   repeated Alias aliases = 1;
+}
+
+// ListCodecsRequest is the request for ListCodecs.
+message ListCodecsRequest {}
+
+// ListCodecsResponse is the response for ListCodecs.
+// Codec names follow the registry convention: plain codecs are short names
+// like "json"/"yaml", and config-crypto registers encrypting wrappers as
+// "encrypted:<inner>" (e.g. "encrypted:json").
+//
+// The payload is intentionally minimal (names only). When richer metadata is
+// needed (e.g. inner codec, encryption family, max value size), add a new
+// `repeated CodecInfo codec_info = 2;` field — keep `codecs` for clients
+// that only need the names.
+message ListCodecsResponse {
+  repeated string codecs = 1;
 }
 
 // Alias represents a key alias mapping.

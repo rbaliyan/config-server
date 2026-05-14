@@ -2,15 +2,21 @@
 setup:
     mise install
 
-# Generate protobuf code
+# Generate protobuf code.
+#
+# Output dir is `proto/` (not `.`) so paths=source_relative resolves the input
+# `proto/config/v1/config.proto` to `proto/config/v1/*.pb.go` rather than
+# `./config/v1/*.pb.go`. grpc-gateway's .proto deps are picked up from the
+# active module cache via `go list` so the path tracks go.mod automatically.
+# googleapis is vendored into third_party/ to avoid a network dependency.
 proto:
     protoc \
-        --go_out=. --go_opt=paths=source_relative \
-        --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-        --grpc-gateway_out=. --grpc-gateway_opt=paths=source_relative,generate_unbound_methods=true \
+        --go_out=proto --go_opt=paths=source_relative \
+        --go-grpc_out=proto --go-grpc_opt=paths=source_relative \
+        --grpc-gateway_out=proto --grpc-gateway_opt=paths=source_relative,generate_unbound_methods=true \
         -I proto \
-        -I $(go env GOPATH)/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@v2.25.1 \
-        -I $(go env GOPATH)/pkg/mod/github.com/googleapis/googleapis@v0.0.0-20250115164207-1a7da9e5054f \
+        -I third_party/googleapis \
+        -I "$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gateway/v2@$(go list -m github.com/grpc-ecosystem/grpc-gateway/v2 | awk '{print $2}')" \
         proto/config/v1/config.proto
 
 # Download googleapis for proto imports
