@@ -40,6 +40,8 @@ authSaveBtn.addEventListener('click', () => {
   bearerToken = authInput.value.trim();
   sessionStorage.setItem(BEARER_TOKEN_KEY, bearerToken);
   showToast('Token saved.', 'success');
+  // Refresh codec list now that we have credentials.
+  if (typeof loadCodecs === 'function') loadCodecs();
 });
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -199,17 +201,18 @@ async function loadKeys(namespace, cursor) {
 function renderRow(namespace, entry) {
   const tr = document.createElement('tr');
 
-  const rawValue   = decodeValue(entry.value);
   // grpc-gateway default marshaler emits camelCase; accept snake_case as a fallback.
-  const updatedTs  = entry.updatedAt || entry.updated_at;
-  const updatedAt  = updatedTs ? formatDate(updatedTs) : '';
-  const codec      = entry.codec || 'raw';
-  const version    = entry.version != null ? entry.version : '';
+  const updatedTs = entry.updatedAt || entry.updated_at;
+  const updatedAt = updatedTs ? formatDate(updatedTs) : '';
+  const codec     = entry.codec || 'raw';
+  const version   = entry.version != null ? entry.version : '';
+
+  const cell = formatValueCell(entry, codec);
 
   tr.innerHTML = `
     <td class="cell-key">${escHtml(entry.key)}</td>
-    <td class="cell-value" title="${escAttr(rawValue)}" data-key="${escAttr(entry.key)}">${escHtml(truncate(rawValue, 80))}</td>
-    <td class="cell-codec">${escHtml(codec)}</td>
+    <td class="${cell.className}" title="${escAttr(cell.title)}" data-key="${escAttr(entry.key)}">${escHtml(cell.text)}</td>
+    <td class="cell-codec">${cell.codecBadge}${escHtml(codec)}</td>
     <td class="cell-version">${escHtml(String(version))}</td>
     <td class="cell-updated">${escHtml(updatedAt)}</td>
     <td class="cell-actions">
@@ -219,11 +222,11 @@ function renderRow(namespace, entry) {
   `;
 
   tr.querySelector('.cell-value').addEventListener('click', () => {
-    openEdit(namespace, entry.key, rawValue, codec);
+    openEdit(namespace, entry.key, cell.editValue, codec);
   });
 
   tr.querySelector('.edit-btn').addEventListener('click', () => {
-    openEdit(namespace, entry.key, rawValue, codec);
+    openEdit(namespace, entry.key, cell.editValue, codec);
   });
 
   tr.querySelector('.delete-btn').addEventListener('click', () => {
@@ -231,6 +234,42 @@ function renderRow(namespace, entry) {
   });
 
   return tr;
+}
+
+// formatValueCell decides how the Value column is rendered for one entry.
+// Splitting it out keeps renderRow readable and gives a single seam to add
+// future codec classes (compressed, signed, …) without growing renderRow.
+function formatValueCell(entry, codec) {
+  const rawValue = decodeValue(entry.value);
+
+  if (isEncryptedCodec(codec)) {
+    // The dashboard sees ciphertext; show a placeholder instead of a base64-
+    // decoded blob so operators aren't tricked into editing it as plaintext.
+    // The edit modal opens with an empty textarea for the same reason.
+    const cipherLen = entry.value ? Math.floor(entry.value.length * 3 / 4) : 0;
+    return {
+      text:       `<encrypted, ${cipherLen} bytes>`,
+      className:  'cell-value cell-value-encrypted',
+      title:      'Encrypted ciphertext — decrypt with a config-crypto client to view',
+      codecBadge: '<span class="codec-badge codec-badge-encrypted" title="config-crypto envelope encryption">ENC</span>',
+      editValue:  '',
+    };
+  }
+
+  return {
+    text:       truncate(rawValue, 80),
+    className:  'cell-value',
+    title:      rawValue,
+    codecBadge: '',
+    editValue:  rawValue,
+  };
+}
+
+// isEncryptedCodec recognises any config-crypto encrypting codec name.
+// Matches "encrypted:<inner>" (the default) and prefix-qualified variants
+// like "client:encrypted:<inner>" (see WithCodecPrefix in config-crypto).
+function isEncryptedCodec(name) {
+  return /^(?:[a-zA-Z0-9_-]+:)?encrypted:/.test(name);
 }
 
 // ── Create form ────────────────────────────────────────────────────────────
@@ -373,6 +412,67 @@ loadBtn.addEventListener('click', () => {
 nsInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') loadBtn.click();
 });
+
+// ── Codec discovery ────────────────────────────────────────────────────────
+// Fetch the list of codecs supported by the server (including any
+// "encrypted:*" wrappers registered via config-crypto) and populate the
+// dropdowns. The static HTML ships with plain options only — encrypted
+// options are added here only when the server actually advertises them, so
+// users can't pick a codec the server will reject.
+
+async function loadCodecs() {
+  let data;
+  try {
+    data = await apiFetch('GET', '/v1/codecs');
+  } catch (err) {
+    // Logged (not toasted) because a stale dropdown is annoying, not fatal,
+    // and toasting on every page load would be noisy when auth isn't set up
+    // yet. The hardcoded plain options remain usable.
+    console.warn('dashboard: codec discovery failed, using static options:', err.message);
+    return;
+  }
+  const codecs = (data && data.codecs) ? data.codecs : [];
+  if (codecs.length === 0) return;
+
+  populateCodecSelect(formCodec, codecs, formCodec.value || 'json');
+  populateCodecSelect(editCodec, codecs, editCodec.value || 'json');
+}
+
+function populateCodecSelect(selectEl, codecs, preferred) {
+  const plain     = [];
+  const encrypted = [];
+  codecs.forEach(name => {
+    (isEncryptedCodec(name) ? encrypted : plain).push(name);
+  });
+
+  selectEl.innerHTML = '';
+  appendOptGroup(selectEl, 'Plain', plain);
+  appendOptGroup(selectEl, 'Encrypted (config-crypto)', encrypted);
+
+  // Restore previous selection if the codec still exists, else fall back.
+  if (codecs.includes(preferred)) {
+    selectEl.value = preferred;
+  } else if (plain.length > 0) {
+    selectEl.value = plain[0];
+  }
+}
+
+function appendOptGroup(selectEl, label, names) {
+  if (names.length === 0) return;
+  const group = document.createElement('optgroup');
+  group.label = label;
+  names.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value       = name;
+    opt.textContent = name;
+    group.appendChild(opt);
+  });
+  selectEl.appendChild(group);
+}
+
+// Kick off codec discovery once at startup. We don't await — failures log
+// and fall back to the static plain-only options.
+loadCodecs();
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
