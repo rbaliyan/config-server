@@ -134,12 +134,12 @@ func (s *SyncStore) GetVersions(ctx context.Context, namespace, key string, filt
 	return vs.GetVersions(ctx, namespace, key, filter)
 }
 
-// Stats returns *config.StoreStats from the local store only. Because each
+// Stats returns the local store's [config.StoreStats] snapshot. Because each
 // node stores a disjoint slice of namespaces, cross-node aggregation would
 // require fanning out to all peers. Call Stats on each node independently
 // and sum the results if a cluster-wide view is needed. Returns an error if
-// the local store does not implement config.StatsProvider.
-func (s *SyncStore) Stats(ctx context.Context) (*config.StoreStats, error) {
+// the local store does not implement [config.StatsProvider].
+func (s *SyncStore) Stats(ctx context.Context) (config.StoreStats, error) {
 	sp, ok := s.local.(config.StatsProvider)
 	if !ok {
 		return nil, fmt.Errorf("peersync: Stats: local store does not implement StatsProvider")

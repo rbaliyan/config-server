@@ -7,8 +7,9 @@ require (
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/hashicorp/memberlist v0.5.4
-	github.com/rbaliyan/config v0.7.2
+	github.com/rbaliyan/config v0.8.0
 	github.com/redis/go-redis/v9 v9.19.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478
@@ -42,7 +43,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
