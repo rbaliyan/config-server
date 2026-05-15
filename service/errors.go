@@ -31,6 +31,7 @@ const (
 	reasonAliasSelf            = "ALIAS_SELF"
 	reasonAliasChain           = "ALIAS_CHAIN"
 	reasonCodecNotFound        = "CODEC_NOT_FOUND"
+	reasonInvalidCursor        = "INVALID_CURSOR"
 
 	// errorInfoDomain identifies the source of the ErrorInfo. Must match on
 	// both client and server.
@@ -123,6 +124,8 @@ func classifyError(err error) (codes.Code, string, string) {
 		return codes.InvalidArgument, reasonAliasChain, err.Error()
 	case errors.Is(err, config.ErrCodecNotFound):
 		return codes.InvalidArgument, reasonCodecNotFound, err.Error()
+	case errors.Is(err, config.ErrInvalidCursor):
+		return codes.InvalidArgument, reasonInvalidCursor, err.Error()
 	default:
 		return codes.Internal, "", "internal error"
 	}

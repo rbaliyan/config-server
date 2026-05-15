@@ -1410,6 +1410,120 @@ func (*ListCodecsRequest) Descriptor() ([]byte, []int) {
 	return file_config_v1_config_proto_rawDescGZIP(), []int{24}
 }
 
+// ListNamespacesRequest is the request for ListNamespaces.
+type ListNamespacesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"` // Namespace name prefix filter (empty = all)
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`  // Max results (0 = server default, capped)
+	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"` // Pagination cursor from previous response
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNamespacesRequest) Reset() {
+	*x = ListNamespacesRequest{}
+	mi := &file_config_v1_config_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNamespacesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNamespacesRequest) ProtoMessage() {}
+
+func (x *ListNamespacesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNamespacesRequest.ProtoReflect.Descriptor instead.
+func (*ListNamespacesRequest) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListNamespacesRequest) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *ListNamespacesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListNamespacesRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+// ListNamespacesResponse is the response for ListNamespaces.
+type ListNamespacesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespaces    []string               `protobuf:"bytes,1,rep,name=namespaces,proto3" json:"namespaces,omitempty"`                   // Sorted ascending
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"` // Empty if no more results
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNamespacesResponse) Reset() {
+	*x = ListNamespacesResponse{}
+	mi := &file_config_v1_config_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNamespacesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNamespacesResponse) ProtoMessage() {}
+
+func (x *ListNamespacesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNamespacesResponse.ProtoReflect.Descriptor instead.
+func (*ListNamespacesResponse) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListNamespacesResponse) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
+	}
+	return nil
+}
+
+func (x *ListNamespacesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
 // ListCodecsResponse is the response for ListCodecs.
 // Codec names follow the registry convention: plain codecs are short names
 // like "json"/"yaml", and config-crypto registers encrypting wrappers as
@@ -1428,7 +1542,7 @@ type ListCodecsResponse struct {
 
 func (x *ListCodecsResponse) Reset() {
 	*x = ListCodecsResponse{}
-	mi := &file_config_v1_config_proto_msgTypes[25]
+	mi := &file_config_v1_config_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1554,7 @@ func (x *ListCodecsResponse) String() string {
 func (*ListCodecsResponse) ProtoMessage() {}
 
 func (x *ListCodecsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[25]
+	mi := &file_config_v1_config_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1567,7 @@ func (x *ListCodecsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCodecsResponse.ProtoReflect.Descriptor instead.
 func (*ListCodecsResponse) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{25}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListCodecsResponse) GetCodecs() []string {
@@ -1476,7 +1590,7 @@ type Alias struct {
 
 func (x *Alias) Reset() {
 	*x = Alias{}
-	mi := &file_config_v1_config_proto_msgTypes[26]
+	mi := &file_config_v1_config_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1488,7 +1602,7 @@ func (x *Alias) String() string {
 func (*Alias) ProtoMessage() {}
 
 func (x *Alias) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[26]
+	mi := &file_config_v1_config_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1501,7 +1615,7 @@ func (x *Alias) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Alias.ProtoReflect.Descriptor instead.
 func (*Alias) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{26}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Alias) GetAlias() string {
@@ -1549,7 +1663,7 @@ type Entry struct {
 
 func (x *Entry) Reset() {
 	*x = Entry{}
-	mi := &file_config_v1_config_proto_msgTypes[27]
+	mi := &file_config_v1_config_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1561,7 +1675,7 @@ func (x *Entry) String() string {
 func (*Entry) ProtoMessage() {}
 
 func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[27]
+	mi := &file_config_v1_config_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1574,7 +1688,7 @@ func (x *Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entry.ProtoReflect.Descriptor instead.
 func (*Entry) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{27}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Entry) GetNamespace() string {
@@ -1713,7 +1827,17 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x12ListAliasesRequest\"A\n" +
 	"\x13ListAliasesResponse\x12*\n" +
 	"\aaliases\x18\x01 \x03(\v2\x10.config.v1.AliasR\aaliases\"\x13\n" +
-	"\x11ListCodecsRequest\",\n" +
+	"\x11ListCodecsRequest\"]\n" +
+	"\x15ListNamespacesRequest\x12\x16\n" +
+	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"Y\n" +
+	"\x16ListNamespacesResponse\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x01 \x03(\tR\n" +
+	"namespaces\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\",\n" +
 	"\x12ListCodecsResponse\x12\x16\n" +
 	"\x06codecs\x18\x01 \x03(\tR\x06codecs\"\x8a\x01\n" +
 	"\x05Alias\x12\x14\n" +
@@ -1744,8 +1868,7 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x0fCHANGE_TYPE_SET\x10\x01\x12\x16\n" +
 	"\x12CHANGE_TYPE_DELETE\x10\x02\x12\x19\n" +
 	"\x15CHANGE_TYPE_ALIAS_SET\x10\x03\x12\x1c\n" +
-	"\x18CHANGE_TYPE_ALIAS_DELETE\x10\x042\xd0\n" +
-	"\n" +
+	"\x18CHANGE_TYPE_ALIAS_DELETE\x10\x042\xbf\v\n" +
 	"\rConfigService\x12c\n" +
 	"\x03Get\x12\x15.config.v1.GetRequest\x1a\x16.config.v1.GetResponse\"-\x82\xd3\xe4\x93\x02'\x12%/v1/namespaces/{namespace}/keys/{key}\x12f\n" +
 	"\x03Set\x12\x15.config.v1.SetRequest\x1a\x16.config.v1.SetResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/v1/namespaces/{namespace}/keys/{key}\x12l\n" +
@@ -1761,7 +1884,8 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\vListAliases\x12\x1d.config.v1.ListAliasesRequest\x1a\x1e.config.v1.ListAliasesResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/aliases\x12]\n" +
 	"\n" +
 	"ListCodecs\x12\x1c.config.v1.ListCodecsRequest\x1a\x1d.config.v1.ListCodecsResponse\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/codecsB<Z:github.com/rbaliyan/config-server/proto/config/v1;configpbb\x06proto3"
+	"/v1/codecs\x12m\n" +
+	"\x0eListNamespaces\x12 .config.v1.ListNamespacesRequest\x1a!.config.v1.ListNamespacesResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/namespacesB<Z:github.com/rbaliyan/config-server/proto/config/v1;configpbb\x06proto3"
 
 var (
 	file_config_v1_config_proto_rawDescOnce sync.Once
@@ -1776,55 +1900,57 @@ func file_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_config_v1_config_proto_goTypes = []any{
-	(WriteMode)(0),                // 0: config.v1.WriteMode
-	(ChangeType)(0),               // 1: config.v1.ChangeType
-	(*GetRequest)(nil),            // 2: config.v1.GetRequest
-	(*GetResponse)(nil),           // 3: config.v1.GetResponse
-	(*SetRequest)(nil),            // 4: config.v1.SetRequest
-	(*SetResponse)(nil),           // 5: config.v1.SetResponse
-	(*DeleteRequest)(nil),         // 6: config.v1.DeleteRequest
-	(*DeleteResponse)(nil),        // 7: config.v1.DeleteResponse
-	(*ListRequest)(nil),           // 8: config.v1.ListRequest
-	(*ListResponse)(nil),          // 9: config.v1.ListResponse
-	(*GetVersionsRequest)(nil),    // 10: config.v1.GetVersionsRequest
-	(*GetVersionsResponse)(nil),   // 11: config.v1.GetVersionsResponse
-	(*SnapshotRequest)(nil),       // 12: config.v1.SnapshotRequest
-	(*SnapshotResponse)(nil),      // 13: config.v1.SnapshotResponse
-	(*WatchRequest)(nil),          // 14: config.v1.WatchRequest
-	(*WatchResponse)(nil),         // 15: config.v1.WatchResponse
-	(*CheckAccessRequest)(nil),    // 16: config.v1.CheckAccessRequest
-	(*CheckAccessResponse)(nil),   // 17: config.v1.CheckAccessResponse
-	(*SetAliasRequest)(nil),       // 18: config.v1.SetAliasRequest
-	(*SetAliasResponse)(nil),      // 19: config.v1.SetAliasResponse
-	(*DeleteAliasRequest)(nil),    // 20: config.v1.DeleteAliasRequest
-	(*DeleteAliasResponse)(nil),   // 21: config.v1.DeleteAliasResponse
-	(*GetAliasRequest)(nil),       // 22: config.v1.GetAliasRequest
-	(*GetAliasResponse)(nil),      // 23: config.v1.GetAliasResponse
-	(*ListAliasesRequest)(nil),    // 24: config.v1.ListAliasesRequest
-	(*ListAliasesResponse)(nil),   // 25: config.v1.ListAliasesResponse
-	(*ListCodecsRequest)(nil),     // 26: config.v1.ListCodecsRequest
-	(*ListCodecsResponse)(nil),    // 27: config.v1.ListCodecsResponse
-	(*Alias)(nil),                 // 28: config.v1.Alias
-	(*Entry)(nil),                 // 29: config.v1.Entry
-	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
+	(WriteMode)(0),                 // 0: config.v1.WriteMode
+	(ChangeType)(0),                // 1: config.v1.ChangeType
+	(*GetRequest)(nil),             // 2: config.v1.GetRequest
+	(*GetResponse)(nil),            // 3: config.v1.GetResponse
+	(*SetRequest)(nil),             // 4: config.v1.SetRequest
+	(*SetResponse)(nil),            // 5: config.v1.SetResponse
+	(*DeleteRequest)(nil),          // 6: config.v1.DeleteRequest
+	(*DeleteResponse)(nil),         // 7: config.v1.DeleteResponse
+	(*ListRequest)(nil),            // 8: config.v1.ListRequest
+	(*ListResponse)(nil),           // 9: config.v1.ListResponse
+	(*GetVersionsRequest)(nil),     // 10: config.v1.GetVersionsRequest
+	(*GetVersionsResponse)(nil),    // 11: config.v1.GetVersionsResponse
+	(*SnapshotRequest)(nil),        // 12: config.v1.SnapshotRequest
+	(*SnapshotResponse)(nil),       // 13: config.v1.SnapshotResponse
+	(*WatchRequest)(nil),           // 14: config.v1.WatchRequest
+	(*WatchResponse)(nil),          // 15: config.v1.WatchResponse
+	(*CheckAccessRequest)(nil),     // 16: config.v1.CheckAccessRequest
+	(*CheckAccessResponse)(nil),    // 17: config.v1.CheckAccessResponse
+	(*SetAliasRequest)(nil),        // 18: config.v1.SetAliasRequest
+	(*SetAliasResponse)(nil),       // 19: config.v1.SetAliasResponse
+	(*DeleteAliasRequest)(nil),     // 20: config.v1.DeleteAliasRequest
+	(*DeleteAliasResponse)(nil),    // 21: config.v1.DeleteAliasResponse
+	(*GetAliasRequest)(nil),        // 22: config.v1.GetAliasRequest
+	(*GetAliasResponse)(nil),       // 23: config.v1.GetAliasResponse
+	(*ListAliasesRequest)(nil),     // 24: config.v1.ListAliasesRequest
+	(*ListAliasesResponse)(nil),    // 25: config.v1.ListAliasesResponse
+	(*ListCodecsRequest)(nil),      // 26: config.v1.ListCodecsRequest
+	(*ListNamespacesRequest)(nil),  // 27: config.v1.ListNamespacesRequest
+	(*ListNamespacesResponse)(nil), // 28: config.v1.ListNamespacesResponse
+	(*ListCodecsResponse)(nil),     // 29: config.v1.ListCodecsResponse
+	(*Alias)(nil),                  // 30: config.v1.Alias
+	(*Entry)(nil),                  // 31: config.v1.Entry
+	(*timestamppb.Timestamp)(nil),  // 32: google.protobuf.Timestamp
 }
 var file_config_v1_config_proto_depIdxs = []int32{
-	29, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
+	31, // 0: config.v1.GetResponse.entry:type_name -> config.v1.Entry
 	0,  // 1: config.v1.SetRequest.write_mode:type_name -> config.v1.WriteMode
-	29, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
-	29, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
-	29, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
-	29, // 5: config.v1.SnapshotResponse.entries:type_name -> config.v1.Entry
+	31, // 2: config.v1.SetResponse.entry:type_name -> config.v1.Entry
+	31, // 3: config.v1.ListResponse.entries:type_name -> config.v1.Entry
+	31, // 4: config.v1.GetVersionsResponse.entries:type_name -> config.v1.Entry
+	31, // 5: config.v1.SnapshotResponse.entries:type_name -> config.v1.Entry
 	1,  // 6: config.v1.WatchResponse.type:type_name -> config.v1.ChangeType
-	29, // 7: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
-	28, // 8: config.v1.SetAliasResponse.alias:type_name -> config.v1.Alias
-	28, // 9: config.v1.GetAliasResponse.alias:type_name -> config.v1.Alias
-	28, // 10: config.v1.ListAliasesResponse.aliases:type_name -> config.v1.Alias
-	30, // 11: config.v1.Alias.created_at:type_name -> google.protobuf.Timestamp
-	30, // 12: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
-	30, // 13: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 7: config.v1.WatchResponse.entry:type_name -> config.v1.Entry
+	30, // 8: config.v1.SetAliasResponse.alias:type_name -> config.v1.Alias
+	30, // 9: config.v1.GetAliasResponse.alias:type_name -> config.v1.Alias
+	30, // 10: config.v1.ListAliasesResponse.aliases:type_name -> config.v1.Alias
+	32, // 11: config.v1.Alias.created_at:type_name -> google.protobuf.Timestamp
+	32, // 12: config.v1.Entry.created_at:type_name -> google.protobuf.Timestamp
+	32, // 13: config.v1.Entry.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 14: config.v1.ConfigService.Get:input_type -> config.v1.GetRequest
 	4,  // 15: config.v1.ConfigService.Set:input_type -> config.v1.SetRequest
 	6,  // 16: config.v1.ConfigService.Delete:input_type -> config.v1.DeleteRequest
@@ -1838,21 +1964,23 @@ var file_config_v1_config_proto_depIdxs = []int32{
 	22, // 24: config.v1.ConfigService.GetAlias:input_type -> config.v1.GetAliasRequest
 	24, // 25: config.v1.ConfigService.ListAliases:input_type -> config.v1.ListAliasesRequest
 	26, // 26: config.v1.ConfigService.ListCodecs:input_type -> config.v1.ListCodecsRequest
-	3,  // 27: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
-	5,  // 28: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
-	7,  // 29: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
-	9,  // 30: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
-	11, // 31: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
-	13, // 32: config.v1.ConfigService.Snapshot:output_type -> config.v1.SnapshotResponse
-	15, // 33: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
-	17, // 34: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
-	19, // 35: config.v1.ConfigService.SetAlias:output_type -> config.v1.SetAliasResponse
-	21, // 36: config.v1.ConfigService.DeleteAlias:output_type -> config.v1.DeleteAliasResponse
-	23, // 37: config.v1.ConfigService.GetAlias:output_type -> config.v1.GetAliasResponse
-	25, // 38: config.v1.ConfigService.ListAliases:output_type -> config.v1.ListAliasesResponse
-	27, // 39: config.v1.ConfigService.ListCodecs:output_type -> config.v1.ListCodecsResponse
-	27, // [27:40] is the sub-list for method output_type
-	14, // [14:27] is the sub-list for method input_type
+	27, // 27: config.v1.ConfigService.ListNamespaces:input_type -> config.v1.ListNamespacesRequest
+	3,  // 28: config.v1.ConfigService.Get:output_type -> config.v1.GetResponse
+	5,  // 29: config.v1.ConfigService.Set:output_type -> config.v1.SetResponse
+	7,  // 30: config.v1.ConfigService.Delete:output_type -> config.v1.DeleteResponse
+	9,  // 31: config.v1.ConfigService.List:output_type -> config.v1.ListResponse
+	11, // 32: config.v1.ConfigService.GetVersions:output_type -> config.v1.GetVersionsResponse
+	13, // 33: config.v1.ConfigService.Snapshot:output_type -> config.v1.SnapshotResponse
+	15, // 34: config.v1.ConfigService.Watch:output_type -> config.v1.WatchResponse
+	17, // 35: config.v1.ConfigService.CheckAccess:output_type -> config.v1.CheckAccessResponse
+	19, // 36: config.v1.ConfigService.SetAlias:output_type -> config.v1.SetAliasResponse
+	21, // 37: config.v1.ConfigService.DeleteAlias:output_type -> config.v1.DeleteAliasResponse
+	23, // 38: config.v1.ConfigService.GetAlias:output_type -> config.v1.GetAliasResponse
+	25, // 39: config.v1.ConfigService.ListAliases:output_type -> config.v1.ListAliasesResponse
+	29, // 40: config.v1.ConfigService.ListCodecs:output_type -> config.v1.ListCodecsResponse
+	28, // 41: config.v1.ConfigService.ListNamespaces:output_type -> config.v1.ListNamespacesResponse
+	28, // [28:42] is the sub-list for method output_type
+	14, // [14:28] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name
 	14, // [14:14] is the sub-list for extension extendee
 	0,  // [0:14] is the sub-list for field type_name
@@ -1869,7 +1997,7 @@ func file_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_v1_config_proto_rawDesc), len(file_config_v1_config_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,19 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ConfigService_Get_FullMethodName         = "/config.v1.ConfigService/Get"
-	ConfigService_Set_FullMethodName         = "/config.v1.ConfigService/Set"
-	ConfigService_Delete_FullMethodName      = "/config.v1.ConfigService/Delete"
-	ConfigService_List_FullMethodName        = "/config.v1.ConfigService/List"
-	ConfigService_GetVersions_FullMethodName = "/config.v1.ConfigService/GetVersions"
-	ConfigService_Snapshot_FullMethodName    = "/config.v1.ConfigService/Snapshot"
-	ConfigService_Watch_FullMethodName       = "/config.v1.ConfigService/Watch"
-	ConfigService_CheckAccess_FullMethodName = "/config.v1.ConfigService/CheckAccess"
-	ConfigService_SetAlias_FullMethodName    = "/config.v1.ConfigService/SetAlias"
-	ConfigService_DeleteAlias_FullMethodName = "/config.v1.ConfigService/DeleteAlias"
-	ConfigService_GetAlias_FullMethodName    = "/config.v1.ConfigService/GetAlias"
-	ConfigService_ListAliases_FullMethodName = "/config.v1.ConfigService/ListAliases"
-	ConfigService_ListCodecs_FullMethodName  = "/config.v1.ConfigService/ListCodecs"
+	ConfigService_Get_FullMethodName            = "/config.v1.ConfigService/Get"
+	ConfigService_Set_FullMethodName            = "/config.v1.ConfigService/Set"
+	ConfigService_Delete_FullMethodName         = "/config.v1.ConfigService/Delete"
+	ConfigService_List_FullMethodName           = "/config.v1.ConfigService/List"
+	ConfigService_GetVersions_FullMethodName    = "/config.v1.ConfigService/GetVersions"
+	ConfigService_Snapshot_FullMethodName       = "/config.v1.ConfigService/Snapshot"
+	ConfigService_Watch_FullMethodName          = "/config.v1.ConfigService/Watch"
+	ConfigService_CheckAccess_FullMethodName    = "/config.v1.ConfigService/CheckAccess"
+	ConfigService_SetAlias_FullMethodName       = "/config.v1.ConfigService/SetAlias"
+	ConfigService_DeleteAlias_FullMethodName    = "/config.v1.ConfigService/DeleteAlias"
+	ConfigService_GetAlias_FullMethodName       = "/config.v1.ConfigService/GetAlias"
+	ConfigService_ListAliases_FullMethodName    = "/config.v1.ConfigService/ListAliases"
+	ConfigService_ListCodecs_FullMethodName     = "/config.v1.ConfigService/ListCodecs"
+	ConfigService_ListNamespaces_FullMethodName = "/config.v1.ConfigService/ListNamespaces"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
@@ -71,6 +72,12 @@ type ConfigServiceClient interface {
 	// Clients use this to discover which codecs (including encrypted variants
 	// from config-crypto) are supported for Set requests.
 	ListCodecs(ctx context.Context, in *ListCodecsRequest, opts ...grpc.CallOption) (*ListCodecsResponse, error)
+	// ListNamespaces returns the names of namespaces that contain at least one
+	// entry. Results are sorted ascending and paginated.
+	//
+	// Supported only when the underlying store implements NamespaceLister or
+	// StatsProvider; otherwise returns UNIMPLEMENTED.
+	ListNamespaces(ctx context.Context, in *ListNamespacesRequest, opts ...grpc.CallOption) (*ListNamespacesResponse, error)
 }
 
 type configServiceClient struct {
@@ -220,6 +227,16 @@ func (c *configServiceClient) ListCodecs(ctx context.Context, in *ListCodecsRequ
 	return out, nil
 }
 
+func (c *configServiceClient) ListNamespaces(ctx context.Context, in *ListNamespacesRequest, opts ...grpc.CallOption) (*ListNamespacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNamespacesResponse)
+	err := c.cc.Invoke(ctx, ConfigService_ListNamespaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
@@ -257,6 +274,12 @@ type ConfigServiceServer interface {
 	// Clients use this to discover which codecs (including encrypted variants
 	// from config-crypto) are supported for Set requests.
 	ListCodecs(context.Context, *ListCodecsRequest) (*ListCodecsResponse, error)
+	// ListNamespaces returns the names of namespaces that contain at least one
+	// entry. Results are sorted ascending and paginated.
+	//
+	// Supported only when the underlying store implements NamespaceLister or
+	// StatsProvider; otherwise returns UNIMPLEMENTED.
+	ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
 }
 
@@ -305,6 +328,9 @@ func (UnimplementedConfigServiceServer) ListAliases(context.Context, *ListAliase
 }
 func (UnimplementedConfigServiceServer) ListCodecs(context.Context, *ListCodecsRequest) (*ListCodecsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListCodecs not implemented")
+}
+func (UnimplementedConfigServiceServer) ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNamespaces not implemented")
 }
 func (UnimplementedConfigServiceServer) mustEmbedUnimplementedConfigServiceServer() {}
 func (UnimplementedConfigServiceServer) testEmbeddedByValue()                       {}
@@ -554,6 +580,24 @@ func _ConfigService_ListCodecs_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConfigService_ListNamespaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNamespacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).ListNamespaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_ListNamespaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).ListNamespaces(ctx, req.(*ListNamespacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConfigService_ServiceDesc is the grpc.ServiceDesc for ConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -608,6 +652,10 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCodecs",
 			Handler:    _ConfigService_ListCodecs_Handler,
+		},
+		{
+			MethodName: "ListNamespaces",
+			Handler:    _ConfigService_ListNamespaces_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

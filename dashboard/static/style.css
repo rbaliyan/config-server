@@ -124,6 +124,54 @@ body {
   background: var(--color-row-alt);
 }
 
+/* ── Namespace list (sidebar) ────────────────────────────── */
+.ns-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 4px;
+  background: var(--color-bg);
+}
+
+.ns-list:empty {
+  display: none;
+}
+
+.ns-list li button {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+.ns-list li button:hover {
+  background: var(--color-row-alt);
+}
+
+.ns-list li button.ns-active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.sidebar-footer {
+  display: flex;
+  justify-content: center;
+}
+
 /* ── Main content area ───────────────────────────────────── */
 .main {
   flex: 1;
@@ -281,30 +329,43 @@ body {
   padding: 12px 0 0;
 }
 
-/* ── Create form section ─────────────────────────────────── */
-.create-section {
-  background: var(--color-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px 24px;
-}
-
-.create-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 16px;
-}
-
-.create-form {
+/* ── Keys toolbar (prefix filter + add button) ───────────── */
+.keys-toolbar {
   display: flex;
-  flex-direction: column;
   gap: 12px;
+  align-items: center;
 }
 
+.keys-toolbar .input {
+  flex: 1;
+  max-width: 360px;
+}
+
+/* ── Form rows (used inside modals) ──────────────────────── */
 .form-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.form-row-inline {
+  flex-direction: row;
+  gap: 12px;
+}
+
+.form-row-inline > .form-row {
+  flex: 1;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  min-height: 14px;
+}
+
+.form-hint.form-hint-error {
+  color: var(--color-danger);
 }
 
 .form-label {

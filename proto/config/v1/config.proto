@@ -102,6 +102,17 @@ service ConfigService {
       get: "/v1/codecs"
     };
   }
+
+  // ListNamespaces returns the names of namespaces that contain at least one
+  // entry. Results are sorted ascending and paginated.
+  //
+  // Supported only when the underlying store implements NamespaceLister or
+  // StatsProvider; otherwise returns UNIMPLEMENTED.
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {
+    option (google.api.http) = {
+      get: "/v1/namespaces"
+    };
+  }
 }
 
 // GetRequest is the request for Get.
@@ -261,6 +272,19 @@ message ListAliasesResponse {
 
 // ListCodecsRequest is the request for ListCodecs.
 message ListCodecsRequest {}
+
+// ListNamespacesRequest is the request for ListNamespaces.
+message ListNamespacesRequest {
+  string prefix = 1;          // Namespace name prefix filter (empty = all)
+  int32 limit = 2;            // Max results (0 = server default, capped)
+  string cursor = 3;          // Pagination cursor from previous response
+}
+
+// ListNamespacesResponse is the response for ListNamespaces.
+message ListNamespacesResponse {
+  repeated string namespaces = 1;  // Sorted ascending
+  string next_cursor = 2;          // Empty if no more results
+}
 
 // ListCodecsResponse is the response for ListCodecs.
 // Codec names follow the registry convention: plain codecs are short names

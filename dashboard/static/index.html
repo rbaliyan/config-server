@@ -17,15 +17,23 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-section">
-        <label class="sidebar-label" for="ns-input">Namespace</label>
+        <label class="sidebar-label" for="ns-input">Open Namespace</label>
         <div class="ns-row">
           <input id="ns-input" class="input" type="text" placeholder="my-app" autocomplete="off">
-          <button id="load-btn" class="btn btn-primary">Load</button>
+          <button id="load-btn" class="btn btn-primary">Open</button>
         </div>
+        <p class="sidebar-hint">Type a name to jump directly, or pick one from the list below.</p>
       </div>
 
       <div class="sidebar-section">
-        <p class="sidebar-hint">Enter a namespace and press Load to browse its keys.</p>
+        <label class="sidebar-label" for="ns-filter-input">Namespaces</label>
+        <input id="ns-filter-input" class="input" type="text" placeholder="Filter by prefix" autocomplete="off">
+        <ul id="ns-list" class="ns-list"></ul>
+        <div id="ns-list-empty" class="sidebar-hint" style="display:none">No namespaces found.</div>
+        <div id="ns-list-error" class="sidebar-hint" style="display:none"></div>
+        <div class="sidebar-footer">
+          <button id="ns-load-more" class="btn btn-secondary btn-sm" style="display:none">Load more</button>
+        </div>
       </div>
 
       <div class="sidebar-section" id="auth-section" style="display:none">
@@ -49,8 +57,13 @@
         <span id="key-count" class="key-count"></span>
       </div>
 
+      <div id="keys-toolbar" class="keys-toolbar" style="display:none">
+        <input id="key-prefix-input" class="input" type="text" placeholder="Filter keys by prefix" autocomplete="off">
+        <button id="add-key-btn" type="button" class="btn btn-primary">Add Key</button>
+      </div>
+
       <div id="empty-state" class="empty-state">
-        <p>Enter a namespace in the sidebar and click Load.</p>
+        <p>Enter a namespace in the sidebar and click Open.</p>
       </div>
 
       <div id="table-wrapper" style="display:none">
@@ -72,34 +85,54 @@
           <button id="load-more" class="btn btn-secondary" style="display:none">Load more</button>
         </div>
       </div>
+    </main>
+  </div>
 
-      <!-- Create / Edit form -->
-      <section class="create-section" id="create-section" style="display:none">
-        <h3 class="create-title">Add / Update Key</h3>
-        <form id="create-form" class="create-form" autocomplete="off">
+  <!-- Add Key modal -->
+  <div id="add-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="add-modal-heading">
+    <div class="modal">
+      <h3 id="add-modal-heading" class="modal-title">Add Key</h3>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="form-label">Namespace</label>
+          <input id="add-ns" class="input" type="text" readonly>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="add-key">Key</label>
+          <input id="add-key" class="input" type="text" placeholder="config.key" autocomplete="off">
+        </div>
+        <div class="form-row form-row-inline">
           <div class="form-row">
-            <label class="form-label" for="form-key">Key</label>
-            <input id="form-key" class="input" type="text" placeholder="config.key" required>
+            <label class="form-label" for="add-value-type">Value Type</label>
+            <select id="add-value-type" class="input">
+              <option value="string">String</option>
+              <option value="number">Number</option>
+              <option value="boolean">Boolean</option>
+              <option value="json">JSON</option>
+              <option value="raw">Raw</option>
+            </select>
           </div>
           <div class="form-row">
-            <label class="form-label" for="form-codec">Codec</label>
-            <select id="form-codec" class="input">
+            <label class="form-label" for="add-codec">Codec</label>
+            <select id="add-codec" class="input">
               <option value="json">json</option>
               <option value="yaml">yaml</option>
               <option value="toml">toml</option>
               <option value="raw">raw</option>
             </select>
           </div>
-          <div class="form-row">
-            <label class="form-label" for="form-value">Value (plain text)</label>
-            <textarea id="form-value" class="input textarea" rows="4" placeholder='{"key":"value"}'></textarea>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save</button>
-          </div>
-        </form>
-      </section>
-    </main>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="add-value">Value</label>
+          <textarea id="add-value" class="input textarea" rows="6" placeholder='{"key":"value"}'></textarea>
+          <p id="add-value-hint" class="form-hint"></p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="add-cancel" type="button" class="btn btn-secondary">Cancel</button>
+        <button id="add-save" type="button" class="btn btn-primary">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- Edit modal -->
