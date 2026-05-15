@@ -1146,6 +1146,12 @@ func (m *mockConfigClient) ListCodecs(ctx context.Context, in *configpb.ListCode
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+// ListNamespaces is exposed only over the HTTP gateway for the dashboard;
+// the gRPC client does not surface it on RemoteStore.
+func (m *mockConfigClient) ListNamespaces(ctx context.Context, in *configpb.ListNamespacesRequest, opts ...grpc.CallOption) (*configpb.ListNamespacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),

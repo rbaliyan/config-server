@@ -22,9 +22,14 @@ let bearerToken = sessionStorage.getItem(BEARER_TOKEN_KEY) || '';
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentNamespace = '';
+let currentKeyPrefix = '';
 let currentCursor    = '';
 let totalLoaded      = 0;
 const recentNS       = []; // last-used namespaces (up to 5)
+
+// Namespace list pagination state
+let nsNextCursor = '';
+let nsFilterPrefix = '';
 
 // ── Auth UI ────────────────────────────────────────────────────────────────
 const authSection   = document.getElementById('auth-section');
@@ -40,29 +45,44 @@ authSaveBtn.addEventListener('click', () => {
   bearerToken = authInput.value.trim();
   sessionStorage.setItem(BEARER_TOKEN_KEY, bearerToken);
   showToast('Token saved.', 'success');
-  // Refresh codec list now that we have credentials.
+  // Refresh namespace + codec lists now that we have credentials.
+  loadNamespaces();
   if (typeof loadCodecs === 'function') loadCodecs();
 });
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
-const nsInput       = document.getElementById('ns-input');
-const loadBtn       = document.getElementById('load-btn');
-const tableBody     = document.getElementById('keys-table-body');
-const tableWrapper  = document.getElementById('table-wrapper');
-const loadMoreBtn   = document.getElementById('load-more');
-const createSection = document.getElementById('create-section');
-const createForm    = document.getElementById('create-form');
-const formKey       = document.getElementById('form-key');
-const formCodec     = document.getElementById('form-codec');
-const formValue     = document.getElementById('form-value');
-const nsHeader      = document.getElementById('ns-header');
-const nsTitle       = document.getElementById('ns-title');
-const keyCount      = document.getElementById('key-count');
-const emptyState    = document.getElementById('empty-state');
-const recentSection = document.getElementById('recent-section');
-const recentList    = document.getElementById('recent-list');
+const nsInput        = document.getElementById('ns-input');
+const loadBtn        = document.getElementById('load-btn');
+const nsFilterInput  = document.getElementById('ns-filter-input');
+const nsList         = document.getElementById('ns-list');
+const nsListEmpty    = document.getElementById('ns-list-empty');
+const nsListError    = document.getElementById('ns-list-error');
+const nsLoadMoreBtn  = document.getElementById('ns-load-more');
+const tableBody      = document.getElementById('keys-table-body');
+const tableWrapper   = document.getElementById('table-wrapper');
+const loadMoreBtn    = document.getElementById('load-more');
+const keysToolbar    = document.getElementById('keys-toolbar');
+const keyPrefixInput = document.getElementById('key-prefix-input');
+const addKeyBtn      = document.getElementById('add-key-btn');
+const nsHeader       = document.getElementById('ns-header');
+const nsTitle        = document.getElementById('ns-title');
+const keyCount       = document.getElementById('key-count');
+const emptyState     = document.getElementById('empty-state');
+const recentSection  = document.getElementById('recent-section');
+const recentList     = document.getElementById('recent-list');
 
-// Modal refs
+// Add Key modal refs
+const addModal       = document.getElementById('add-modal');
+const addNs          = document.getElementById('add-ns');
+const addKey         = document.getElementById('add-key');
+const addValueType   = document.getElementById('add-value-type');
+const addCodec       = document.getElementById('add-codec');
+const addValue       = document.getElementById('add-value');
+const addValueHint   = document.getElementById('add-value-hint');
+const addSave        = document.getElementById('add-save');
+const addCancel      = document.getElementById('add-cancel');
+
+// Edit modal refs
 const editModal   = document.getElementById('edit-modal');
 const editNs      = document.getElementById('edit-ns');
 const editKeyEl   = document.getElementById('edit-key');
@@ -74,6 +94,10 @@ const editCancel  = document.getElementById('edit-cancel');
 // Toast ref
 const toastEl = document.getElementById('toast');
 let toastTimer = null;
+
+// Debounce timers (typed-in prefix filters fire on input).
+let nsFilterTimer = null;
+let keyPrefixTimer = null;
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 function showToast(msg, type) {
@@ -142,6 +166,82 @@ async function apiFetch(method, path, body) {
   return resp.json();
 }
 
+// ── Namespace list ─────────────────────────────────────────────────────────
+
+/**
+ * Load namespaces from the server. With no cursor, the list is replaced;
+ * with a cursor, the next page is appended. Errors are reported inline in
+ * the sidebar (toast for credential errors) — listing namespaces requires
+ * the server's "list" permission and either NamespaceLister or StatsProvider,
+ * so failures are common and shouldn't spam toasts on first load.
+ */
+async function loadNamespaces(cursor) {
+  const params = new URLSearchParams();
+  params.set('limit', '50');
+  if (nsFilterPrefix) params.set('prefix', nsFilterPrefix);
+  if (cursor) params.set('cursor', cursor);
+
+  let data;
+  try {
+    data = await apiFetch('GET', '/v1/namespaces?' + params.toString());
+  } catch (err) {
+    nsListError.textContent = 'Failed to load namespaces: ' + err.message;
+    nsListError.style.display = 'block';
+    nsList.innerHTML = '';
+    nsListEmpty.style.display = 'none';
+    nsLoadMoreBtn.style.display = 'none';
+    return;
+  }
+  nsListError.style.display = 'none';
+
+  const names = (data && data.namespaces) ? data.namespaces : [];
+
+  if (!cursor) {
+    nsList.innerHTML = '';
+  }
+
+  names.forEach(name => nsList.appendChild(renderNsItem(name)));
+
+  // grpc-gateway emits camelCase by default; accept snake_case as fallback.
+  nsNextCursor = (data && (data.nextCursor || data.next_cursor)) || '';
+  nsLoadMoreBtn.style.display = nsNextCursor ? 'inline-block' : 'none';
+
+  const total = nsList.children.length;
+  nsListEmpty.style.display = total === 0 ? 'block' : 'none';
+
+  // Re-highlight the currently open namespace after rerender.
+  if (currentNamespace) highlightActiveNamespace(currentNamespace);
+}
+
+function renderNsItem(name) {
+  const li  = document.createElement('li');
+  const btn = document.createElement('button');
+  btn.type        = 'button';
+  btn.textContent = name;
+  btn.dataset.ns  = name;
+  btn.addEventListener('click', () => openNamespace(name));
+  li.appendChild(btn);
+  return li;
+}
+
+function highlightActiveNamespace(name) {
+  nsList.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('ns-active', btn.dataset.ns === name);
+  });
+}
+
+nsLoadMoreBtn.addEventListener('click', () => {
+  if (nsNextCursor) loadNamespaces(nsNextCursor);
+});
+
+nsFilterInput.addEventListener('input', () => {
+  clearTimeout(nsFilterTimer);
+  nsFilterTimer = setTimeout(() => {
+    nsFilterPrefix = nsFilterInput.value.trim();
+    loadNamespaces();
+  }, 200);
+});
+
 // ── Key loading ────────────────────────────────────────────────────────────
 
 async function loadKeys(namespace, cursor) {
@@ -151,9 +251,12 @@ async function loadKeys(namespace, cursor) {
   }
 
   const isFirstPage = !cursor;
+  const params = new URLSearchParams();
+  params.set('limit', '50');
+  if (currentKeyPrefix) params.set('prefix', currentKeyPrefix);
+  if (cursor) params.set('cursor', cursor);
 
-  let url = '/v1/namespaces/' + encodeURIComponent(namespace) + '/keys?limit=50';
-  if (cursor) url += '&cursor=' + encodeURIComponent(cursor);
+  const url = '/v1/namespaces/' + encodeURIComponent(namespace) + '/keys?' + params.toString();
 
   let data;
   try {
@@ -176,24 +279,37 @@ async function loadKeys(namespace, cursor) {
     totalLoaded++;
   });
 
-  // grpc-gateway default marshaler emits camelCase (protojson). We accept
-  // snake_case as a fallback in case a caller sets UseProtoNames=true.
   currentCursor = data.nextCursor || data.next_cursor || '';
   loadMoreBtn.style.display = currentCursor ? 'inline-block' : 'none';
 
   // Show / hide UI sections.
   const hasRows = tableBody.rows.length > 0;
-  emptyState.style.display  = hasRows ? 'none' : 'flex';
+  emptyState.style.display   = hasRows ? 'none' : 'flex';
   tableWrapper.style.display = hasRows ? 'block' : 'none';
-  createSection.style.display = 'block';
-  nsHeader.style.display = 'flex';
-  nsTitle.textContent    = namespace;
-  keyCount.textContent   = totalLoaded + ' key' + (totalLoaded !== 1 ? 's' : '');
+  keysToolbar.style.display  = 'flex';
+  nsHeader.style.display     = 'flex';
+  nsTitle.textContent        = namespace;
+  keyCount.textContent       = totalLoaded + ' key' + (totalLoaded !== 1 ? 's' : '');
 
   if (isFirstPage && entries.length === 0) {
-    emptyState.style.display  = 'flex';
+    emptyState.style.display   = 'flex';
     tableWrapper.style.display = 'none';
+    // Keep toolbar visible so the user can clear the prefix or add a key.
   }
+}
+
+// openNamespace centralises the work of switching to a namespace. Used by:
+//   - Sidebar list click
+//   - Recent list click
+//   - "Open" button (after copying input → currentNamespace)
+function openNamespace(namespace) {
+  currentNamespace = namespace;
+  currentCursor    = '';
+  currentKeyPrefix = '';
+  nsInput.value         = namespace;
+  keyPrefixInput.value  = '';
+  highlightActiveNamespace(namespace);
+  loadKeys(namespace);
 }
 
 // ── Row rendering ──────────────────────────────────────────────────────────
@@ -201,7 +317,6 @@ async function loadKeys(namespace, cursor) {
 function renderRow(namespace, entry) {
   const tr = document.createElement('tr');
 
-  // grpc-gateway default marshaler emits camelCase; accept snake_case as a fallback.
   const updatedTs = entry.updatedAt || entry.updated_at;
   const updatedAt = updatedTs ? formatDate(updatedTs) : '';
   const codec     = entry.codec || 'raw';
@@ -237,8 +352,6 @@ function renderRow(namespace, entry) {
 }
 
 // formatValueCell decides how the Value column is rendered for one entry.
-// Splitting it out keeps renderRow readable and gives a single seam to add
-// future codec classes (compressed, signed, …) without growing renderRow.
 function formatValueCell(entry, codec) {
   const rawValue = decodeValue(entry.value);
 
@@ -272,31 +385,149 @@ function isEncryptedCodec(name) {
   return /^(?:[a-zA-Z0-9_-]+:)?encrypted:/.test(name);
 }
 
-// ── Create form ────────────────────────────────────────────────────────────
+// ── Key prefix filter ──────────────────────────────────────────────────────
 
-createForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const key   = formKey.value.trim();
-  const codec = formCodec.value;
-  const value = formValue.value;
+keyPrefixInput.addEventListener('input', () => {
+  clearTimeout(keyPrefixTimer);
+  keyPrefixTimer = setTimeout(() => {
+    currentKeyPrefix = keyPrefixInput.value.trim();
+    currentCursor    = '';
+    if (currentNamespace) loadKeys(currentNamespace);
+  }, 200);
+});
 
-  if (!key) { showToast('Key is required.', 'error'); return; }
-  if (!currentNamespace) { showToast('Load a namespace first.', 'error'); return; }
+// ── Add Key modal ──────────────────────────────────────────────────────────
+//
+// Value-type semantics — the textarea always holds plain text; the chosen
+// type only changes how that text is interpreted before sending:
+//
+//   string  — sent as-is (any text).
+//   number  — parsed with Number(); rejected if NaN. Sent as its string form.
+//   boolean — must be the literal "true" or "false".
+//   json    — parsed with JSON.parse(); rejected on syntax error. Sent as
+//             JSON.stringify(parsed) so whitespace/quotes are normalised.
+//   raw     — sent as-is. Distinct from "string" only in intent (callers may
+//             pair this with the "raw" codec to skip server-side decoding).
+
+const VALUE_TYPE_HINTS = {
+  string:  'Any plain text. Sent verbatim.',
+  number:  'A numeric literal, e.g. 42 or 3.14.',
+  boolean: 'Exactly "true" or "false".',
+  json:    'Any valid JSON value: object, array, string, number, boolean, or null.',
+  raw:     'Sent verbatim, with no client-side validation.',
+};
+
+addKeyBtn.addEventListener('click', () => {
+  if (!currentNamespace) {
+    showToast('Open a namespace first.', 'error');
+    return;
+  }
+  addNs.value          = currentNamespace;
+  addKey.value         = '';
+  addValue.value       = '';
+  addValueType.value   = 'string';
+  syncAddValueHint();
+  // Codec dropdown is populated by loadCodecs() at startup; preserve the
+  // user's last choice but default to "json" on first open.
+  if (!addCodec.value) addCodec.value = 'json';
+  addModal.style.display = 'flex';
+  addKey.focus();
+});
+
+addValueType.addEventListener('change', syncAddValueHint);
+
+function syncAddValueHint() {
+  addValueHint.textContent = VALUE_TYPE_HINTS[addValueType.value] || '';
+  addValueHint.classList.remove('form-hint-error');
+}
+
+addCancel.addEventListener('click', closeAddModal);
+
+addModal.addEventListener('click', (e) => {
+  if (e.target === addModal) closeAddModal();
+});
+
+function closeAddModal() {
+  addModal.style.display = 'none';
+}
+
+addSave.addEventListener('click', async () => {
+  const ns    = addNs.value;
+  const key   = addKey.value.trim();
+  const codec = addCodec.value;
+  const type  = addValueType.value;
+
+  if (!key) {
+    addValueHint.textContent = 'Key is required.';
+    addValueHint.classList.add('form-hint-error');
+    addKey.focus();
+    return;
+  }
+
+  let payload;
+  try {
+    payload = coerceValue(addValue.value, type);
+  } catch (err) {
+    addValueHint.textContent = err.message;
+    addValueHint.classList.add('form-hint-error');
+    addValue.focus();
+    return;
+  }
 
   try {
-    await apiFetch('POST', '/v1/namespaces/' + encodeURIComponent(currentNamespace) + '/keys/' + encodeURIComponent(key), {
-      value: encodeValue(value),
+    await apiFetch('POST', '/v1/namespaces/' + encodeURIComponent(ns) + '/keys/' + encodeURIComponent(key), {
+      value: encodeValue(payload),
       codec: codec,
     });
     showToast('Key saved.', 'success');
-    formKey.value   = '';
-    formValue.value = '';
-    // Reload to reflect the new/updated entry.
-    await loadKeys(currentNamespace);
+    closeAddModal();
+    await loadKeys(ns);
   } catch (err) {
-    showToast('Save failed: ' + err.message, 'error');
+    addValueHint.textContent = 'Save failed: ' + err.message;
+    addValueHint.classList.add('form-hint-error');
   }
 });
+
+// coerceValue validates raw textarea input against the chosen value type and
+// returns the string payload to send. Throws on validation failure so the
+// caller can surface the error inline.
+function coerceValue(text, type) {
+  switch (type) {
+    case 'string':
+    case 'raw':
+      return text;
+
+    case 'number': {
+      const trimmed = text.trim();
+      if (trimmed === '') throw new Error('Number value is required.');
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) throw new Error('Not a valid number: ' + trimmed);
+      return String(n);
+    }
+
+    case 'boolean': {
+      const t = text.trim().toLowerCase();
+      if (t !== 'true' && t !== 'false') {
+        throw new Error('Boolean must be exactly "true" or "false".');
+      }
+      return t;
+    }
+
+    case 'json': {
+      if (text.trim() === '') throw new Error('JSON value is required.');
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        throw new Error('Invalid JSON: ' + e.message);
+      }
+      return JSON.stringify(parsed);
+    }
+
+    default:
+      return text;
+  }
+}
 
 // ── Edit modal ─────────────────────────────────────────────────────────────
 
@@ -322,7 +553,9 @@ editModal.addEventListener('click', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && editModal.style.display !== 'none') closeEditModal();
+  if (e.key !== 'Escape') return;
+  if (editModal.style.display !== 'none') closeEditModal();
+  if (addModal.style.display  !== 'none') closeAddModal();
 });
 
 editSave.addEventListener('click', async () => {
@@ -365,7 +598,7 @@ async function deleteKey(namespace, key, rowEl) {
   }
 }
 
-// ── Load more ──────────────────────────────────────────────────────────────
+// ── Load more (keys) ───────────────────────────────────────────────────────
 
 loadMoreBtn.addEventListener('click', () => {
   loadKeys(currentNamespace, currentCursor);
@@ -388,11 +621,7 @@ function renderRecent() {
     const btn = document.createElement('button');
     btn.type        = 'button';
     btn.textContent = ns;
-    btn.addEventListener('click', () => {
-      nsInput.value      = ns;
-      currentNamespace   = ns;
-      loadKeys(ns);
-    });
+    btn.addEventListener('click', () => openNamespace(ns));
     li.appendChild(btn);
     recentList.appendChild(li);
   });
@@ -404,9 +633,7 @@ function renderRecent() {
 loadBtn.addEventListener('click', () => {
   const ns = nsInput.value.trim();
   if (!ns) { showToast('Please enter a namespace.', 'error'); return; }
-  currentNamespace = ns;
-  currentCursor    = '';
-  loadKeys(currentNamespace);
+  openNamespace(ns);
 });
 
 nsInput.addEventListener('keydown', (e) => {
@@ -434,7 +661,7 @@ async function loadCodecs() {
   const codecs = (data && data.codecs) ? data.codecs : [];
   if (codecs.length === 0) return;
 
-  populateCodecSelect(formCodec, codecs, formCodec.value || 'json');
+  populateCodecSelect(addCodec,  codecs, addCodec.value  || 'json');
   populateCodecSelect(editCodec, codecs, editCodec.value || 'json');
 }
 
@@ -470,9 +697,11 @@ function appendOptGroup(selectEl, label, names) {
   selectEl.appendChild(group);
 }
 
-// Kick off codec discovery once at startup. We don't await — failures log
-// and fall back to the static plain-only options.
+// Kick off codec + namespace discovery at startup. Failures log and
+// gracefully degrade — the manual namespace input and static codec options
+// remain usable.
 loadCodecs();
+loadNamespaces();
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
