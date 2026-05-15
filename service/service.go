@@ -22,6 +22,17 @@ type Service struct {
 	store config.Store
 	guard SecurityGuard
 	opts  serviceOptions
+
+	// nsStatsCache fronts the [config.StatsProvider] fallback path of
+	// [Service.ListNamespaces]. Stores that implement
+	// [config.NamespaceLister] natively bypass it. Always non-nil; a
+	// zero TTL disables caching at the lookup level.
+	nsStatsCache *namespaceStatsCache
+
+	// nsFallbackLogger fires the per-Service "you are on the deprecated
+	// path" warning at most once per ListNamespaces fallback. Value
+	// type — the zero value is ready to use.
+	nsFallbackLogger fallbackDeprecationLogger
 }
 
 // NewService creates a new ConfigService.
@@ -31,18 +42,20 @@ func NewService(store config.Store, opts ...Option) (*Service, error) {
 		return nil, fmt.Errorf("config-server: NewService requires a non-nil store")
 	}
 	o := &serviceOptions{
-		guard:              DenyAll(), // Safe default
-		maxSnapshotEntries: 10_000,
-		maxValueSize:       1 << 20, // 1 MiB
-		maxWatchFilters:    100,
+		guard:                  DenyAll(), // Safe default
+		maxSnapshotEntries:     10_000,
+		maxValueSize:           1 << 20, // 1 MiB
+		maxWatchFilters:        100,
+		namespaceStatsCacheTTL: defaultNamespaceStatsCacheTTL,
 	}
 	for _, opt := range opts {
 		opt(o)
 	}
 	return &Service{
-		store: store,
-		guard: o.guard,
-		opts:  *o,
+		store:        store,
+		guard:        o.guard,
+		opts:         *o,
+		nsStatsCache: newNamespaceStatsCache(o.namespaceStatsCacheTTL),
 	}, nil
 }
 
