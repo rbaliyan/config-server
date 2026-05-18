@@ -67,7 +67,16 @@ func (s *Service) ListNamespaces(ctx context.Context, req *configpb.ListNamespac
 		return nil, status.Error(codes.Unimplemented, "ListNamespaces is not supported by the configured store")
 	}
 
-	stats, err := sp.Stats(ctx)
+	// Phase 7: warn (once per Service lifetime) that the underlying store
+	// is on the deprecated fallback path. Operators see this in logs and
+	// can plan a backend upgrade before the fallback is removed in a
+	// future major version.
+	s.nsFallbackLogger.logOnce(s.store)
+
+	// Phase 6: route through the singleflight + TTL cache so paginating
+	// clients do not pay the O(namespaces) Stats cost per page. The
+	// returned *StoreStats is shared and must be treated read-only.
+	stats, err := s.nsStatsCache.Get(ctx, sp)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
@@ -75,8 +84,11 @@ func (s *Service) ListNamespaces(ctx context.Context, req *configpb.ListNamespac
 	// Collect → filter by prefix → sort. Sorting must happen after filtering
 	// so the cursor (last emitted name) advances monotonically against the
 	// same sorted view on the next call.
-	all := make([]string, 0, len(stats.EntriesByNamespace))
-	for ns := range stats.EntriesByNamespace {
+	//
+	// config v0.8.0 exposes EntriesByNamespace as an iter.Seq2; namespace
+	// count is no longer cheaply available, so the slice grows organically.
+	var all []string
+	for ns := range stats.EntriesByNamespace() {
 		if req.Prefix != "" && !strings.HasPrefix(ns, req.Prefix) {
 			continue
 		}
