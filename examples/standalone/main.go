@@ -39,21 +39,27 @@ func main() {
 	_, _ = store.Set(ctx, "default", "database/port", config.NewValue(5432))
 
 	// Create the config service with AllowAll guard (for demo only!)
+	guard := service.AllowAll()
 	configSvc, err := service.NewService(store,
-		service.WithSecurityGuard(service.AllowAll()),
+		service.WithSecurityGuard(guard),
 	)
 	if err != nil {
 		logger.Error("failed to create config service", "error", err)
 		os.Exit(1)
 	}
 
-	// Create gRPC server with interceptors
+	// Create gRPC server with interceptors. The auth interceptors authenticate
+	// once per RPC and place the Identity on the context for the service to
+	// authorize against; production deployments must wire these for the
+	// SecurityGuard to be enforced (see the embedded example).
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			service.AuthInterceptor(guard),
 			service.LoggingInterceptor(logger),
 			service.RecoveryInterceptor(logger),
 		),
 		grpc.ChainStreamInterceptor(
+			service.StreamAuthInterceptor(guard),
 			service.StreamLoggingInterceptor(logger),
 			service.StreamRecoveryInterceptor(logger),
 		),
