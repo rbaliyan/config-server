@@ -15,17 +15,30 @@ config-server/
 ├── proto/config/v1/     # Protobuf definitions and generated code
 │   └── config.proto     # Service, messages, enums
 ├── service/             # gRPC service implementation
-│   ├── service.go       # ConfigService (Get, Set, Delete, List, GetVersions, Watch, CheckAccess, aliases)
+│   ├── service.go       # ConfigService (Get, Set, Delete, List, GetVersions, Watch, CheckAccess)
+│   ├── alias.go         # SetAlias, DeleteAlias, GetAlias, ListAliases RPCs
 │   ├── snapshot.go      # Snapshot RPC with ETag caching and entry-count guard
+│   ├── codecs.go        # ListCodecs RPC (registered codec discovery)
+│   ├── namespaces.go    # ListNamespaces RPC (NamespaceLister fast path)
+│   ├── namespaces_fallback.go # ListNamespaces StatsProvider fallback with cached singleflight
+│   ├── audit.go         # Auditor interface, LogAuditor, SQLAuditor, MultiAuditor
+│   ├── conversions.go   # proto <-> config.Value conversion helpers
 │   ├── security.go      # SecurityGuard interface, Identity, Decision, AllowAll, DenyAll
 │   ├── interceptors.go  # Logging, recovery, and authentication interceptors
 │   ├── ratelimit.go     # TokenBucketLimiter and rate-limit interceptors
 │   ├── errors.go        # config error → gRPC status mapping (with ErrorInfo reason)
-│   └── options.go       # Service options (WithSecurityGuard, limits)
+│   └── options.go       # Service options (WithSecurityGuard, WithAuditor, limits)
 ├── gateway/             # HTTP/JSON gateway via gRPC-Gateway
 │   ├── handler.go       # NewHandler (remote), NewInProcessHandler (in-process)
 │   ├── sse.go           # SSE Watch endpoint (Server-Sent Events for /v1/watch)
-│   └── options.go       # Gateway options (TLS, dial opts, mux opts, heartbeat)
+│   ├── diff.go          # Version-diff endpoint (/v1/.../diff), gateway-only
+│   ├── middleware.go    # AuthMiddleware (HTTP→metadata bridge + SecurityGuard)
+│   ├── eventbuffer.go   # Ring buffer for Last-Event-ID SSE replay
+│   └── options.go       # Gateway options (TLS, dial/mux opts, heartbeat, dashboard)
+├── dashboard/           # Embedded web UI (static bundle) + auth
+│   ├── handler.go       # Handler(mountPath, apiBase, auth) static file server
+│   ├── auth.go          # DashboardAuth: CookieAuth, BearerTokenAuth, HMACAuth
+│   └── static/          # HTML/JS/CSS bundle served by the gateway
 ├── client/              # Go client implementing config.Store
 │   ├── store.go         # RemoteStore with retry, circuit breaker, watch
 │   └── options.go       # Client options (TLS, retry, circuit, watch, keepalive)
@@ -36,9 +49,11 @@ config-server/
 │   ├── redis_transport.go        # Redis pub/sub Transport implementation
 │   ├── memberlist_transport.go   # HashiCorp memberlist P2P gossip Transport implementation
 │   ├── dialer.go        # PeerDialer interface for forwarding ops to remote owners
+│   ├── grpc_dialer.go   # GRPCDialer — PeerDialer backed by cached client.RemoteStore conns
 │   ├── ownership.go     # OwnershipStore interface for persistent Claim records
 │   ├── options.go       # SyncStore options (heartbeat, failure timeout, vnodes, …)
-│   └── optional.go      # BulkStore, AliasStore, VersionedStore, StatsProvider forwarding
+│   ├── optional.go      # BulkStore, AliasStore, VersionedStore, StatsProvider forwarding
+│   └── sqlownership/    # SQL-backed OwnershipStore (PostgreSQL, SQLite)
 └── examples/            # Usage examples
     ├── standalone/      # Full gRPC + HTTP server
     ├── embedded/        # Embed into existing gRPC server with custom auth
@@ -62,7 +77,15 @@ config-server/
 | DELETE | `/v1/namespaces/{namespace}/keys/{key}` | Delete |
 | GET | `/v1/namespaces/{namespace}/keys` | List |
 | GET | `/v1/namespaces/{namespace}/keys/{key}/versions` | GetVersions |
+| GET | `/v1/namespaces/{namespace}/snapshot` | Snapshot |
 | GET | `/v1/namespaces/{namespace}/access` | CheckAccess |
+| GET | `/v1/namespaces` | ListNamespaces |
+| GET | `/v1/codecs` | ListCodecs |
+| PUT | `/v1/aliases/{alias}` | SetAlias |
+| GET | `/v1/aliases/{alias}` | GetAlias |
+| DELETE | `/v1/aliases/{alias}` | DeleteAlias |
+| GET | `/v1/aliases` | ListAliases |
+| GET | `/v1/namespaces/{namespace}/keys/{key}/diff?v1=&v2=` | Diff (gateway-only) |
 | GET | `/v1/watch?namespaces=...&prefixes=...` | Watch (SSE) |
 
 ## Code Style

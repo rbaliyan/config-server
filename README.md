@@ -11,12 +11,14 @@ A gRPC configuration server with HTTP/JSON gateway, pluggable authorization, and
 
 ## Features
 
-- **gRPC API**: Full CRUD + Watch (server-streaming) + Version History for configuration entries
+- **gRPC API**: 13 RPCs — CRUD, Watch (server-streaming), version history, namespace snapshots, key aliases, and codec/namespace discovery
 - **HTTP/JSON Gateway**: RESTful API via gRPC-Gateway, auto-generated from proto definitions, with SSE watch (including `Last-Event-ID` resumption) and a version-diff endpoint
 - **Pluggable Security**: Authentication + authorization via the `SecurityGuard` interface; OPA integration shipped as a sub-module
-- **Embedded Dashboard**: Optional web UI mounted at `/dashboard/` via `gateway.WithDashboard()`
+- **Embedded Dashboard**: Optional web UI mounted at `/dashboard/` via `gateway.WithDashboard()`, with pluggable auth (cookie, bearer, HMAC, OIDC)
+- **Audit Logging**: Pluggable `Auditor` (slog, SQL, or fan-out) records every config mutation
+- **Snapshots**: Point-in-time namespace export with ETag / `If-None-Match` caching
 - **Go Client (`RemoteStore`)**: Implements `config.Store` and `config.VersionedStore` — use with `config.Manager` like any local store
-- **Resilience**: Retries with exponential backoff, circuit breaker, per-call timeouts, server-side rate limiting
+- **Resilience**: Retries with exponential backoff, circuit breaker, per-call timeouts, server-side token-bucket rate limiting
 - **Watch Streams**: Real-time change notifications with automatic reconnection
 - **In-Process Mode**: Run HTTP gateway and gRPC service in the same process without network overhead
 
@@ -100,8 +102,19 @@ The `RemoteStore` implements `config.Store` and `config.VersionedStore`, so it w
 | `Delete(namespace, key)` | Remove an entry |
 | `List(namespace, prefix, limit, cursor)` | List entries with pagination |
 | `GetVersions(namespace, key, version, limit, cursor)` | Retrieve version history for a key |
+| `Snapshot(namespace, if_none_match)` | Point-in-time export of a namespace with ETag caching |
 | `Watch(namespaces, prefixes)` | Stream real-time changes (server-streaming) |
 | `CheckAccess(namespace)` | Check read/write access for a namespace |
+| `SetAlias(alias, target)` | Create a key alias mapping |
+| `DeleteAlias(alias)` | Remove a key alias |
+| `GetAlias(alias)` | Retrieve a specific alias and its target |
+| `ListAliases()` | List all registered key aliases |
+| `ListCodecs()` | List codec names registered on the server |
+| `ListNamespaces(prefix, limit, cursor)` | List namespaces that contain at least one entry |
+
+Stores that do not implement `config.NamespaceLister` fall back to a `Stats()` call whose result is cached (default 30s, singleflight-deduplicated) and tunable via `service.WithNamespaceStatsCacheTTL`.
+
+All RPCs except `Watch` (server-streaming, gRPC only) are also exposed over HTTP/JSON — see the table below.
 
 ### HTTP/JSON Gateway
 
@@ -114,8 +127,15 @@ The gateway exposes a RESTful API auto-mapped from the proto definitions:
 | `DELETE` | Delete | `/v1/namespaces/{namespace}/keys/{key}` |
 | `GET` | List | `/v1/namespaces/{namespace}/keys?prefix=app/&limit=100&cursor=...` |
 | `GET` | GetVersions | `/v1/namespaces/{namespace}/keys/{key}/versions?version=3&limit=10&cursor=...` |
+| `GET` | Snapshot | `/v1/namespaces/{namespace}/snapshot` |
 | `GET` | Diff | `/v1/namespaces/{namespace}/keys/{key}/diff?v1=1&v2=2` |
 | `GET` | CheckAccess | `/v1/namespaces/{namespace}/access` |
+| `GET` | ListNamespaces | `/v1/namespaces?prefix=&limit=100&cursor=...` |
+| `GET` | ListCodecs | `/v1/codecs` |
+| `PUT` | SetAlias | `/v1/aliases/{alias}` |
+| `GET` | GetAlias | `/v1/aliases/{alias}` |
+| `DELETE` | DeleteAlias | `/v1/aliases/{alias}` |
+| `GET` | ListAliases | `/v1/aliases` |
 | `GET` | Watch (SSE) | `/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/` |
 
 The `diff` endpoint returns a JSON object with both versions' raw bytes, codecs, and a `changed` flag. It is implemented in the gateway itself (not in the proto service) and is available on both `NewHandler` and `NewInProcessHandler`.
@@ -218,6 +238,49 @@ http.Handle("/", handler)
 #### Embedded Dashboard
 
 Pass `gateway.WithDashboard()` to mount an embedded web UI at `/dashboard/`. The dashboard is a static bundle (HTML/JS/CSS) served from the gateway and drives all data operations through the existing REST endpoints, so no additional server state is required. Use `gateway.WithDashboardPath("/ui")` to mount it at a different path (path must start with `/` and should not end with `/`).
+
+#### Securing the Dashboard
+
+By default the dashboard is served without access control. Pass
+`gateway.WithDashboardAuth` with a `dashboard.DashboardAuth` to protect both the
+dashboard route and the API calls the dashboard JS makes — the same credential
+is validated on both paths, so configure your `SecurityGuard` to accept it too.
+
+Three built-in strategies are provided:
+
+```go
+// Session/JWT cookie — the browser forwards it automatically; no token UI.
+auth := dashboard.CookieAuth("session", func(r *http.Request, v string) error {
+    return validateSession(v) // nil = accept; non-nil = 401
+})
+
+// Bearer token — a sidebar token field stored in sessionStorage, attached as
+// "Authorization: Bearer <token>" on every request.
+auth := dashboard.BearerTokenAuth(func(r *http.Request, token string) error {
+    return validateToken(token)
+})
+
+// Self-contained passphrase login — serves an inline login form, issues a
+// stateless HMAC-SHA256 session cookie, no session store required.
+auth, err := dashboard.HMACAuth(dashboard.HMACConfig{
+    Secret:     []byte(os.Getenv("DASH_SECRET")), // >= 32 bytes
+    Passphrase: os.Getenv("DASH_PASSPHRASE"),
+    Secure:     true, // requires HTTPS in production
+})
+
+handler, _ := gateway.NewHandler(ctx, "config-server:9090",
+    gateway.WithDashboard(),
+    gateway.WithDashboardAuth(auth),
+)
+```
+
+For any other scheme (mTLS, HTTP Basic, OIDC, a custom header) implement the
+`dashboard.DashboardAuth` interface directly — `Middleware(next)` enforces auth
+server-side and `ClientConfig()` tells the dashboard JS how to attach the
+credential. Two complete worked examples ship in the repo:
+
+- [`examples/dashboard-auth/jwt/`](examples/dashboard-auth/jwt/) — `CookieAuth` and `BearerTokenAuth` backed by JWT validation
+- [`examples/dashboard-auth/oidc/`](examples/dashboard-auth/oidc/) — a full OIDC authorization-code flow implementing `DashboardAuth`
 
 ## Security
 
@@ -348,7 +411,46 @@ guard, _ := opa.NewAuthorizer(ctx, policy, "data.config.authz.allow")
 svc, _ := service.NewService(store, service.WithSecurityGuard(guard))
 ```
 
-**Note:** The OPA authorizer parses JWT tokens to expose their claims to the Rego policy but does **not** verify the JWT signature. Signature, issuer, audience, and expiry checks are the responsibility of the Rego policy (via OPA's built-in token introspection) or of an upstream proxy that has already validated the token.
+#### JWT signature verification
+
+By default the OPA authorizer base64-decodes a JWT's claims segment to expose
+them to the Rego policy as `input.identity.claims` **without verifying the
+signature** — any well-formed token is accepted. In this mode you must pair the
+guard with an upstream proxy (API gateway, ingress, or service mesh) that has
+already validated the token, or call OPA's built-in token introspection
+functions (`io.jwt.verify_*`, `io.jwt.decode_verify`) from the Rego policy.
+
+Alternatively, enable in-process verification with `opa.WithJWTVerifier`. When a
+verifier is set, `Authenticate` calls `Verify`, which enforces the signature,
+expiry, and audience; any failure rejects the request. The package ships three
+verifier constructors:
+
+```go
+// HMAC (HS256 by default; HS384/HS512 via (*HMACVerifier).WithHMACAlgorithm)
+guard, _ := opa.NewAuthorizer(ctx, policy, "data.config.authz.allow",
+    opa.WithJWTVerifier(opa.NewHMACVerifier([]byte("shared-secret"))))
+
+// RSA public key (RS256 by default; RS384/RS512 via (*RSAVerifier).WithRSAAlgorithm)
+guard, _ := opa.NewAuthorizer(ctx, policy, "data.config.authz.allow",
+    opa.WithJWTVerifier(opa.NewRSAVerifier(pubKey)))
+
+// JWKS endpoint (fetched per Verify call; suits OIDC providers that rotate keys)
+guard, _ := opa.NewAuthorizer(ctx, policy, "data.config.authz.allow",
+    opa.WithJWTVerifier(opa.NewJWKSVerifier(jwksURL)))
+```
+
+`NewHMACVerifier(secret []byte)`, `NewRSAVerifier(key *rsa.PublicKey)`, and
+`NewJWKSVerifier(url string)` each return a `JWTVerifier`; you may also supply
+your own implementation of the interface.
+
+#### Other OPA options
+
+| Option | Purpose |
+|--------|---------|
+| `opa.WithAuthHeader(header string)` | gRPC metadata key (or HTTP header) to read the bearer token from. Default `"authorization"`. |
+| `opa.WithSubjectClaim(claim string)` | JWT claim used as the user ID. Default `"sub"`. |
+| `opa.WithBundlePollInterval(d time.Duration)` | How often `NewBundleAuthorizer` re-fetches the bundle URL. Default 30s. |
+| `opa.WithTLSConfig(cfg *tls.Config)` | TLS config for bundle HTTP fetching. |
 
 ## Server Interceptors
 
@@ -426,6 +528,126 @@ if err := result.Err(); err != nil {
 }
 ```
 
+## Snapshots
+
+`Snapshot` returns a point-in-time export of every entry in a namespace, with an
+opaque `ETag` for client-side caching. Pass the previous ETag via
+`client.WithIfNoneMatch` to skip the transfer when nothing has changed: the
+server compares it against the freshly computed ETag and, on a match, returns
+`NotModified: true` with an empty `Entries` map (an `If-None-Match` conditional
+fetch).
+
+```go
+result, _ := store.Snapshot(ctx, "production")
+fmt.Println(result.ETag, len(result.Entries))
+
+// Later: re-fetch only if the namespace changed.
+next, _ := store.Snapshot(ctx, "production", client.WithIfNoneMatch(result.ETag))
+if next.NotModified {
+    // Nothing changed; keep using the cached snapshot.
+}
+```
+
+`SnapshotResult` carries `Entries map[string]config.Value`, `ETag string`, and
+`NotModified bool`. The ETag is a SHA-256 digest of the sorted `(key, version)`
+tuples, so it changes whenever any value in the namespace is written or deleted.
+
+Over HTTP: `GET /v1/namespaces/{namespace}/snapshot`. The number of entries a
+single snapshot may return is bounded by `service.WithMaxSnapshotEntries`
+(default 10000); a namespace larger than the cap fails with `ResourceExhausted`.
+
+## Aliases
+
+When the backing store implements `config.AliasStore`, the server exposes alias
+management — a second key name that resolves to a canonical target key. The
+`RemoteStore` proxies all four operations:
+
+```go
+// Create an alias "db/url" → "database/connection-string".
+_, _ = store.SetAlias(ctx, "db/url", "database/connection-string")
+
+val, _ := store.GetAlias(ctx, "db/url")   // resolves the target
+all, _ := store.ListAliases(ctx)          // map[alias]config.Value
+_ = store.DeleteAlias(ctx, "db/url")
+```
+
+`SetAlias` returns `AlreadyExists` if the alias key is already registered or
+conflicts with an existing config key. Stores that do not implement
+`config.AliasStore` return `Unimplemented` for every alias RPC. Alias mutations
+also surface on the Watch stream as `CHANGE_TYPE_ALIAS_SET` /
+`CHANGE_TYPE_ALIAS_DELETE` events.
+
+Over HTTP: `PUT /v1/aliases/{alias}` (body `{"target":"..."}`),
+`GET /v1/aliases/{alias}`, `DELETE /v1/aliases/{alias}`, and
+`GET /v1/aliases` to list.
+
+## Audit Logging
+
+Pass `service.WithAuditor` to record every config mutation (set, delete, and
+alias changes). An `Auditor` implements a single method:
+
+```go
+type Auditor interface {
+    Record(ctx context.Context, entry AuditEntry) error
+}
+```
+
+Three implementations ship with the service:
+
+```go
+// 1. Structured slog records at Info level.
+logAud := service.NewLogAuditor(slog.Default())
+
+// 2. Persist to a SQL table (PostgreSQL or SQLite). driverName must match the
+//    driver passed to sql.Open; call CreateTable once before first use.
+sqlAud := service.NewSQLAuditor(db, "postgres", service.WithAuditTable("my_audit"))
+_ = sqlAud.CreateTable(ctx)
+
+// 3. Fan out to several auditors at once; Record joins their errors.
+aud := service.NewMultiAuditor(logAud, sqlAud)
+
+svc, _ := service.NewService(store, service.WithAuditor(aud))
+```
+
+`AuditEntry` carries the timestamp, the authenticated `Identity`, the operation,
+namespace, key, base64-encoded value (set operations only), codec, and a free-form
+metadata map. The SQL table name defaults to `config_audit_log` and is overridable
+with `service.WithAuditTable`.
+
+## Rate Limiting
+
+The service ships a per-client token-bucket limiter and gRPC interceptors that
+reject excess traffic with `ResourceExhausted`:
+
+```go
+limiter := service.NewTokenBucketLimiter(
+    service.WithRate(50),                       // tokens/second (default 10)
+    service.WithBurst(100),                     // bucket size (default 20)
+    service.WithCleanupInterval(5*time.Minute), // evict idle clients (default 5m)
+    service.WithClientIdentifier(func(ctx context.Context) string {
+        // Default identifies clients by peer address.
+        return userIDFromContext(ctx)
+    }),
+)
+defer limiter.Close()
+
+grpcServer := grpc.NewServer(
+    grpc.ChainUnaryInterceptor(
+        service.RateLimitInterceptor(limiter),
+        service.AuthInterceptor(guard),
+    ),
+    grpc.ChainStreamInterceptor(
+        service.StreamRateLimitInterceptor(limiter),
+        service.StreamAuthInterceptor(guard),
+    ),
+)
+```
+
+`RateLimitInterceptor` / `StreamRateLimitInterceptor` accept any `RateLimiter`.
+A limiter that also implements `ClientIdentifier` (as `TokenBucketLimiter` does)
+has its `ClientID` called to bucket requests; otherwise the interceptor falls
+back to the gRPC peer address.
+
 ## Client-Side Codecs
 
 When clients use codecs that the server doesn't have registered (e.g., encryption codecs from `config-crypto`), the server treats the bytes as opaque pass-through. This lets clients encrypt values before sending them without requiring the server to hold encryption keys.
@@ -462,7 +684,7 @@ The service is defined in [`proto/config/v1/config.proto`](proto/config/v1/confi
 
 - **`Entry`**: namespace, key, value (bytes), codec, type, version, timestamps
 - **`WriteMode`**: UPSERT (default), CREATE, UPDATE
-- **`ChangeType`**: SET, DELETE
+- **`ChangeType`**: SET, DELETE, ALIAS_SET, ALIAS_DELETE
 
 ## Examples
 
@@ -471,6 +693,8 @@ See the [`examples/`](examples/) directory:
 - **[`standalone/`](examples/standalone/)** - Full gRPC + HTTP server with interceptors
 - **[`embedded/`](examples/embedded/)** - Embed config service into existing gRPC server with custom auth
 - **[`client/`](examples/client/)** - Client usage with `config.Manager`
+- **[`dashboard-auth/jwt/`](examples/dashboard-auth/jwt/)** - Secure the dashboard with `CookieAuth` / `BearerTokenAuth` + JWT
+- **[`dashboard-auth/oidc/`](examples/dashboard-auth/oidc/)** - Secure the dashboard with a custom OIDC `DashboardAuth`
 
 ## Peer Synchronisation (`peersync`)
 
@@ -478,6 +702,22 @@ The `peersync` package wraps a `config.Store` with consistent-hash namespace own
 
 ```bash
 go get github.com/rbaliyan/config-server/peersync
+```
+
+### Forwarding to peers (`GRPCDialer`)
+
+`PeerDialer` is the interface peersync uses to forward an operation to the node
+that owns a namespace. `peersync.NewGRPCDialer` is the built-in implementation:
+it opens (and caches, by address) a `client.RemoteStore` connection to each
+peer, applying the supplied client options to every connection.
+
+```go
+dialer := peersync.NewGRPCDialer(client.WithInsecure())
+defer dialer.Close()
+
+nodeA, _ := peersync.New(storeA, peersync.Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
+    peersync.WithPeerDialer(dialer),
+)
 ```
 
 ### Transport options
@@ -565,6 +805,18 @@ nodeA, _ := peersync.New(storeA, peersync.Member{ID: "nodeA", Addr: "nodeA:9000"
 ```
 
 On `Connect`, claimed namespaces are reloaded and re-announced before the first gossip broadcast, so ownership survives restarts without operator intervention.
+
+You don't have to write the SQL yourself — the `peersync/sqlownership` sub-package
+ships a ready-made `OwnershipStore` for PostgreSQL and SQLite:
+
+```go
+import "github.com/rbaliyan/config-server/peersync/sqlownership"
+
+os := sqlownership.New(db, "postgres") // or "sqlite3"; sqlownership.WithTable to rename
+_ = os.CreateTable(ctx)
+
+nodeA, _ := peersync.New(storeA, self, tr, peersync.WithOwnershipStore(os))
+```
 
 See the [package documentation](https://pkg.go.dev/github.com/rbaliyan/config-server/peersync) for the full API including `Pin`, `Claim`, health checking, and dead-owner handling.
 

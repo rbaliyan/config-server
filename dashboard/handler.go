@@ -101,8 +101,10 @@ func Handler(mountPath, apiBase string, auth DashboardAuth) http.Handler {
 			_, _ = w.Write(body)
 			return
 		}
-		// Block directory-traversal attempts and funnel raw index requests
-		// through the rewritten path above.
+		// Defense-in-depth traversal guard: net/http's ServeMux and
+		// http.FileServer already path-clean requests, so this check is not the
+		// sole barrier — it rejects obviously malicious paths early rather than
+		// being load-bearing on its own.
 		if strings.Contains(r.URL.Path, "..") {
 			http.NotFound(w, r)
 			return
