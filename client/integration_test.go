@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rbaliyan/config"
+	"github.com/rbaliyan/config-server/internal/testutil"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"github.com/rbaliyan/config-server/service"
 	"github.com/rbaliyan/config/memory"
@@ -16,6 +17,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+// integrationTimeout bounds every integration test body so a wedged server
+// fails the test fast instead of hanging until the package test timeout.
+const integrationTimeout = 15 * time.Second
 
 const bufSize = 1024 * 1024
 
@@ -78,7 +83,8 @@ func setupIntegrationTest(t *testing.T) *RemoteStore {
 
 func TestIntegration_CRUD(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// Set a value.
 	val := config.NewValue("hello-world")
@@ -123,7 +129,8 @@ func TestIntegration_CRUD(t *testing.T) {
 
 func TestIntegration_Find(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// Seed multiple values with a common prefix.
 	for i := 0; i < 5; i++ {
@@ -188,8 +195,33 @@ func TestIntegration_Watch(t *testing.T) {
 	}
 	defer watchResult.Stop()
 
-	// Give the watch stream time to establish.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the watch stream to establish using a bounded poll instead of a
+	// fixed sleep: repeatedly write a probe key until an event flows back,
+	// proving the server-side watch is registered. Drain probe events so the
+	// assertions below observe only the live-key change. This fails fast if the
+	// stream never establishes rather than racing on a fixed 100ms guess.
+	established := testutil.Eventually(5*time.Second, 20*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "watch-ns", "probe", config.NewValue("probe")); err != nil {
+			return false
+		}
+		select {
+		case <-watchResult.Events():
+			return true
+		case <-time.After(20 * time.Millisecond):
+			return false
+		}
+	})
+	if !established {
+		t.Fatal("watch stream did not establish within timeout")
+	}
+	// Drain any buffered probe events so the next receive is the live-key event.
+	for draining := true; draining; {
+		select {
+		case <-watchResult.Events():
+		default:
+			draining = false
+		}
+	}
 
 	// Make a change.
 	_, err = store.Set(ctx, "watch-ns", "live-key", config.NewValue("live-value"))
@@ -242,7 +274,8 @@ func TestIntegration_Watch(t *testing.T) {
 
 func TestIntegration_ConditionalWrites(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// WriteModeCreate: first write should succeed.
 	val := config.NewValue("first", config.WithValueWriteMode(config.WriteModeCreate))
@@ -288,7 +321,8 @@ func TestIntegration_ConditionalWrites(t *testing.T) {
 
 func TestIntegration_ErrorMapping(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		_, err := store.Get(ctx, "err-ns", "missing")
@@ -328,7 +362,8 @@ func TestIntegration_ErrorMapping(t *testing.T) {
 
 func TestIntegration_TypeRoundTrip(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	tests := []struct {
 		name   string
@@ -412,7 +447,8 @@ func TestIntegration_TypeRoundTrip(t *testing.T) {
 
 func TestIntegration_VersionIncrement(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// First set: version should be 1.
 	_, err := store.Set(ctx, "ver-ns", "counter", config.NewValue(1))
@@ -445,7 +481,8 @@ func TestIntegration_VersionIncrement(t *testing.T) {
 
 func TestIntegration_GetVersions(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// Create 3 versions
 	for i := 1; i <= 3; i++ {
@@ -522,7 +559,8 @@ func TestIntegration_GetVersions(t *testing.T) {
 
 func TestIntegration_Snapshot(t *testing.T) {
 	store := setupIntegrationTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTimeout)
+	defer cancel()
 
 	// Set multiple keys
 	for i := 1; i <= 3; i++ {

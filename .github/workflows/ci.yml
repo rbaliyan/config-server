@@ -9,9 +9,28 @@ on:
 permissions: read-all
 
 jobs:
+  # Fast, fully in-process smoke gate. No Docker/network: bufconn for gRPC,
+  # httptest for HTTP, memory store. Runs in seconds and gates the slower jobs
+  # below via `needs: smoke`, so an obvious breakage fails the PR fast.
+  smoke:
+    name: Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Smoke tests
+        run: go test -run '^TestSmoke' -timeout 60s ./...
+
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: smoke
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -27,9 +46,179 @@ jobs:
       - name: Test
         run: go test -v -race ./...
 
+      # The authorizer/opa nested module has its own go.mod and is NOT covered
+      # by the root `go test ./...`, so it is built and tested separately
+      # (with the race detector) here.
+      - name: Build opa module
+        run: cd authorizer/opa && go build -v ./...
+
+      - name: Test opa module
+        run: cd authorizer/opa && go test -v -race ./...
+
+  # Brief native fuzzing gate. Separate from the -race `test` job so a fuzz
+  # crash is attributed clearly and so the (non-deterministic) fuzz runs never
+  # block the deterministic unit-test signal. Each native target gets a short
+  # randomized run, then all committed seed corpora are replayed
+  # deterministically across both the root module and the nested authorizer/opa
+  # module.
+  fuzz-smoke:
+    name: Fuzz Smoke
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Run each NATIVE fuzz target briefly. `-fuzz` accepts exactly one target
+      # per `go test` invocation, so each target gets its own run line.
+      # Root module — gateway package targets.
+      - name: Fuzz gateway targets (root module)
+        run: |
+          go test -run '^$' -fuzz=FuzzSanitizeSSEField   -fuzztime=20s ./gateway
+          go test -run '^$' -fuzz=FuzzParseWatchQuery     -fuzztime=20s ./gateway
+          go test -run '^$' -fuzz=FuzzIsForwardableHeader -fuzztime=20s ./gateway
+          go test -run '^$' -fuzz=FuzzResourceFromPath    -fuzztime=20s ./gateway
+          go test -run '^$' -fuzz=FuzzEventBufferSince    -fuzztime=20s ./gateway
+          go test -run '^$' -fuzz=FuzzParseDiffParams      -fuzztime=20s ./gateway
+
+      # Root module — service package targets.
+      - name: Fuzz service targets (root module)
+        run: |
+          go test -run '^$' -fuzz=FuzzServiceGet            -fuzztime=20s ./service
+          go test -run '^$' -fuzz=FuzzServiceSet            -fuzztime=20s ./service
+          go test -run '^$' -fuzz=FuzzServiceList           -fuzztime=20s ./service
+          go test -run '^$' -fuzz=FuzzValueToProtoRoundTrip -fuzztime=20s ./service
+
+      # Nested authorizer/opa module — its own go.mod, not reached by the root
+      # `go test ./...`, so it gets its own run line (and is the only place the
+      # JWT target is fuzzed, since ClusterFuzzLite builds the root module only).
+      - name: Fuzz opa module target
+        run: cd authorizer/opa && go test -run '^$' -fuzz=FuzzVerifyToken -fuzztime=20s .
+
+      # Replay all committed seed corpora deterministically (no -fuzz): this runs
+      # every f.Add seed and every testdata/fuzz/<Target> file as a normal test.
+      - name: Replay seed corpora (root module)
+        run: go test -run '^Fuzz' ./...
+
+      - name: Replay seed corpora (opa module)
+        run: cd authorizer/opa && go test -run '^Fuzz' ./...
+
+  integration:
+    name: Integration (PostgreSQL + Redis)
+    runs-on: ubuntu-latest
+    needs: smoke
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: config_test
+          POSTGRES_PASSWORD: config_test
+          POSTGRES_DB: config_test
+        ports:
+          - 5432:5432
+        # Wait until the database is accepting connections before the job runs.
+        options: >-
+          --health-cmd "pg_isready -U config_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Runs the `integration`-tagged tests (e.g. the PostgreSQL-backed
+      # ownership suite) against the service container above. The default
+      # `test` job above runs the untagged `go test -race ./...` and is
+      # intentionally left unchanged; this job adds the database-gated tests.
+      - name: Integration tests
+        env:
+          POSTGRES_DSN: postgres://config_test:config_test@localhost:5432/config_test?sslmode=disable
+          REDIS_ADDR: localhost:6379
+        run: go test -v -race -tags=integration ./...
+
+  coverage:
+    name: Coverage Gate
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Enforce a minimum per-package statement-coverage threshold (80%) over
+      # the unit-runnable packages of both the root module and the nested
+      # authorizer/opa module. Packages with no test files (examples/*,
+      # generated proto/*) are skipped. The threshold is also enforced locally
+      # via `just test-cover-gate` and documented in CLAUDE.md.
+      - name: Coverage gate (>= 80% per tested package)
+        run: |
+          threshold=80.0
+          out="$(mktemp)"
+          go test -cover ./... | tee "$out"
+          ( cd authorizer/opa && go test -cover ./... ) | tee -a "$out"
+          awk -v t="$threshold" '
+              $1 == "ok" {
+                  pkg = $2; cov = ""
+                  for (i = 1; i <= NF; i++) {
+                      if ($i == "coverage:") { c = $(i+1); sub(/%/, "", c); cov = c + 0 }
+                  }
+                  if (cov == "") next
+                  if (cov < t) { printf "FAIL %s: %.1f%% < %.1f%%\n", pkg, cov, t; fail = 1 }
+                  else         { printf "ok   %s: %.1f%%\n", pkg, cov }
+              }
+              END {
+                  if (fail) { print "coverage gate failed (threshold " t "%)"; exit 1 }
+                  print "coverage gate passed (threshold " t "%)"
+              }
+          ' "$out"
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Run benchmarks for a single iteration (-benchtime=1x) to verify they
+      # compile and execute without error. This is a correctness gate, not a
+      # performance measurement: hosted runners are too noisy for stable
+      # timings. Not run under -race (the race detector skews alloc/timing).
+      - name: Run benchmarks
+        run: go test -run '^$' -bench=. -benchmem -benchtime=1x ./...
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: smoke
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -42,7 +231,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
         with:
-          version: v2.11.4
+          version: v2.12.2
           args: --tests=false
 
   codeql:

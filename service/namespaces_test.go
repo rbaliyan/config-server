@@ -26,6 +26,7 @@ func seedNamespaces(t *testing.T, store config.Store, namespaces ...string) {
 }
 
 func TestService_ListNamespaces_StatsFallback(t *testing.T) {
+	t.Parallel()
 	svc, store := setupTestService(t)
 	seedNamespaces(t, store, "prod", "staging", "dev", "alpha")
 
@@ -45,6 +46,7 @@ func TestService_ListNamespaces_StatsFallback(t *testing.T) {
 }
 
 func TestService_ListNamespaces_PrefixFilter(t *testing.T) {
+	t.Parallel()
 	svc, store := setupTestService(t)
 	seedNamespaces(t, store, "team-a", "team-b", "team-c", "other")
 
@@ -59,6 +61,7 @@ func TestService_ListNamespaces_PrefixFilter(t *testing.T) {
 }
 
 func TestService_ListNamespaces_Pagination(t *testing.T) {
+	t.Parallel()
 	svc, store := setupTestService(t)
 	seedNamespaces(t, store, "a", "b", "c", "d", "e")
 
@@ -97,6 +100,7 @@ func TestService_ListNamespaces_Pagination(t *testing.T) {
 }
 
 func TestService_ListNamespaces_InvalidCursor(t *testing.T) {
+	t.Parallel()
 	svc, _ := setupTestService(t)
 
 	_, err := svc.ListNamespaces(context.Background(), &configpb.ListNamespacesRequest{Cursor: "!not-base64!"})
@@ -109,6 +113,7 @@ func TestService_ListNamespaces_InvalidCursor(t *testing.T) {
 }
 
 func TestService_ListNamespaces_NativeLister(t *testing.T) {
+	t.Parallel()
 	// A store that implements NamespaceLister bypasses the StatsProvider
 	// fallback and returns whatever the native implementation produces — the
 	// service must not re-sort or re-paginate the result.
@@ -139,6 +144,7 @@ func TestService_ListNamespaces_NativeLister(t *testing.T) {
 }
 
 func TestService_ListNamespaces_Unimplemented(t *testing.T) {
+	t.Parallel()
 	// A store that implements neither NamespaceLister nor StatsProvider must
 	// surface UNIMPLEMENTED rather than a generic Internal error.
 	svc, err := NewService(noStatsStore{}, WithSecurityGuard(AllowAll()))
@@ -155,6 +161,7 @@ func TestService_ListNamespaces_Unimplemented(t *testing.T) {
 }
 
 func TestService_ListNamespaces_DenyAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -197,9 +204,11 @@ func (n *nativeListerStore) ListNamespaces(_ context.Context, prefix string, lim
 // to the Unimplemented return.
 type noStatsStore struct{}
 
-func (noStatsStore) Connect(context.Context) error                              { return nil }
-func (noStatsStore) Close(context.Context) error                                { return nil }
-func (noStatsStore) Get(context.Context, string, string) (config.Value, error)  { return nil, errors.New("nope") }
+func (noStatsStore) Connect(context.Context) error { return nil }
+func (noStatsStore) Close(context.Context) error   { return nil }
+func (noStatsStore) Get(context.Context, string, string) (config.Value, error) {
+	return nil, errors.New("nope")
+}
 func (noStatsStore) Set(context.Context, string, string, config.Value) (config.Value, error) {
 	return nil, errors.New("nope")
 }

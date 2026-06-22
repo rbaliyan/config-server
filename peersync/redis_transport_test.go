@@ -8,6 +8,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/rbaliyan/config-server/internal/testutil"
 )
 
 func newTestRedisClient(t *testing.T) (*miniredis.Miniredis, goredis.UniversalClient) {
@@ -47,31 +49,41 @@ func TestRedisTransport_PublishSubscribe(t *testing.T) {
 
 	ctx := context.Background()
 	var (
-		mu      sync.Mutex
+		mu       sync.Mutex
 		received [][]byte
-		done    = make(chan struct{})
+		done     = make(chan struct{})
+		once     sync.Once
 	)
 	want := []byte("hello")
 
+	// The poll below may re-publish several times before the subscriber is live,
+	// so the handler can fire more than once; close done exactly once.
 	if err := tr.Subscribe(ctx, func(msg []byte) {
 		mu.Lock()
 		received = append(received, msg)
 		mu.Unlock()
-		close(done)
+		once.Do(func() { close(done) })
 	}); err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 
-	// Brief pause to let the subscription goroutine register with Redis.
-	time.Sleep(50 * time.Millisecond)
-
-	if err := tr.Publish(ctx, want); err != nil {
-		t.Fatalf("Publish: %v", err)
-	}
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	// The subscription goroutine registers with Redis asynchronously, and
+	// pub/sub silently drops messages published before the subscriber is live.
+	// Rather than guess a fixed registration delay, re-publish on an interval
+	// until the handler observes the message (or the bounded poll fails).
+	delivered := testutil.Eventually(2*time.Second, 25*time.Millisecond, func() bool {
+		if err := tr.Publish(ctx, want); err != nil {
+			t.Errorf("Publish: %v", err)
+			return true // stop polling; the error is the failure
+		}
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if !delivered {
 		t.Fatal("timeout waiting for published message")
 	}
 
@@ -208,5 +220,3 @@ func TestRedisTransport_ImplementsTransport(t *testing.T) {
 	var _ Transport = tr
 	var _ TransportHealthChecker = tr.(TransportHealthChecker)
 }
-
-

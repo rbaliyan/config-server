@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/rbaliyan/config"
-	"github.com/rbaliyan/config/memory"
 	"github.com/rbaliyan/config-server/peersync"
+	"github.com/rbaliyan/config/memory"
 	goredis "github.com/redis/go-redis/v9"
 )
 

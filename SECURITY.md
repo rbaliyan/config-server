@@ -12,7 +12,7 @@ We currently only support the latest version of the project.
 
 - **Static Analysis**: [gosec](https://github.com/securego/gosec) runs on every PR and push to main
 - **Vulnerability Scanning**: [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) checks for known Go vulnerabilities
-- **Fuzz Testing**: [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) continuously fuzzes service and gateway handlers
+- **Fuzz Testing**: [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) continuously fuzzes service and gateway handlers, including the HTTP authorization path parser, the SSE replay buffer, and proto/value conversion. See [FUZZING.md](FUZZING.md) for the target catalog and run/triage workflow.
 - **Code Scanning**: GitHub CodeQL analysis on every PR
 - **Dependency Pinning**: All CI actions and tools are pinned by hash
 - **Dependency Updates**: Dependabot monitors for outdated and vulnerable dependencies

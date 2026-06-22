@@ -21,6 +21,7 @@ import (
 )
 
 func TestRemoteStore_NotConnected(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -73,6 +74,7 @@ func TestRemoteStore_NotConnected(t *testing.T) {
 }
 
 func TestRemoteStore_CloseWithoutConnect(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -85,6 +87,7 @@ func TestRemoteStore_CloseWithoutConnect(t *testing.T) {
 }
 
 func TestRemoteStore_CloseTwice(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -98,6 +101,7 @@ func TestRemoteStore_CloseTwice(t *testing.T) {
 }
 
 func TestRemoteStore_OperationsAfterClose(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -115,6 +119,7 @@ func TestRemoteStore_OperationsAfterClose(t *testing.T) {
 }
 
 func TestRemoteStore_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -145,6 +150,7 @@ func TestRemoteStore_ConcurrentAccess(t *testing.T) {
 }
 
 func TestRemoteStore_ConcurrentConnectClose(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -170,11 +176,13 @@ func TestRemoteStore_ConcurrentConnectClose(t *testing.T) {
 }
 
 func TestRemoteStore_InterfaceCompliance(t *testing.T) {
+	t.Parallel()
 	var store config.Store = &RemoteStore{} //nolint:staticcheck // compile-time interface check
 	_ = store                               // ensure it implements config.Store
 }
 
 func TestRemoteStore_State(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -193,6 +201,7 @@ func TestRemoteStore_State(t *testing.T) {
 }
 
 func TestRemoteStore_StateCallback(t *testing.T) {
+	t.Parallel()
 	states := make([]ConnState, 0)
 	var mu sync.Mutex
 
@@ -224,6 +233,7 @@ func TestRemoteStore_StateCallback(t *testing.T) {
 }
 
 func TestRemoteStore_Ready(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -236,6 +246,7 @@ func TestRemoteStore_Ready(t *testing.T) {
 }
 
 func TestWatchResult(t *testing.T) {
+	t.Parallel()
 	ch := make(chan config.ChangeEvent)
 	errCh := make(chan error, 1)
 	doneCh := make(chan struct{})
@@ -262,6 +273,7 @@ func TestWatchResult(t *testing.T) {
 }
 
 func TestWatchResult_WithError(t *testing.T) {
+	t.Parallel()
 	ch := make(chan config.ChangeEvent)
 	errCh := make(chan error, 1)
 	doneCh := make(chan struct{})
@@ -289,6 +301,7 @@ func TestWatchResult_WithError(t *testing.T) {
 }
 
 func TestConnState_String(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		state ConnState
 		want  string
@@ -308,6 +321,7 @@ func TestConnState_String(t *testing.T) {
 }
 
 func TestOptions(t *testing.T) {
+	t.Parallel()
 	t.Run("WithRetry", func(t *testing.T) {
 		store, _ := NewRemoteStore("localhost:9999",
 			WithInsecure(),
@@ -353,6 +367,7 @@ func TestOptions(t *testing.T) {
 }
 
 func TestCircuitBreaker(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCircuitBreaker(5, 100*time.Millisecond),
@@ -388,6 +403,7 @@ func TestCircuitBreaker(t *testing.T) {
 }
 
 func TestCircuitBreaker_CustomThreshold(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCircuitBreaker(3, 100*time.Millisecond),
@@ -409,6 +425,7 @@ func TestCircuitBreaker_CustomThreshold(t *testing.T) {
 }
 
 func TestProtoToValue(t *testing.T) {
+	t.Parallel()
 	t.Run("nil entry", func(t *testing.T) {
 		val := protoToValue(context.Background(), nil)
 		if val != nil {
@@ -472,6 +489,7 @@ func TestProtoToValue(t *testing.T) {
 }
 
 func TestRemoteStore_WatchMaxErrors(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchMaxErrors(3),
@@ -482,6 +500,7 @@ func TestRemoteStore_WatchMaxErrors(t *testing.T) {
 }
 
 func TestIsNonRetryable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		err  error
 		want bool
@@ -516,6 +535,7 @@ func TestIsNonRetryable(t *testing.T) {
 }
 
 func TestFromGRPCError_AllCodes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		code     codes.Code
@@ -606,6 +626,7 @@ func TestFromGRPCError_AllCodes(t *testing.T) {
 }
 
 func TestConnState_ReservedValue(t *testing.T) {
+	t.Parallel()
 	reserved := ConnState(3)
 	if got := reserved.String(); got != "unknown" {
 		t.Errorf("ConnState(3).String() = %q, want %q", got, "unknown")
@@ -613,6 +634,7 @@ func TestConnState_ReservedValue(t *testing.T) {
 }
 
 func TestBuildDialOpts_Insecure(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithInsecure())
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -624,6 +646,7 @@ func TestBuildDialOpts_Insecure(t *testing.T) {
 }
 
 func TestBuildDialOpts_TLS(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999", WithTLS(nil))
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
@@ -638,6 +661,7 @@ func TestBuildDialOpts_TLS(t *testing.T) {
 }
 
 func TestBuildDialOpts_CustomTLS(t *testing.T) {
+	t.Parallel()
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
 	store, err := NewRemoteStore("localhost:9999", WithTLS(tlsCfg))
 	if err != nil {
@@ -656,6 +680,7 @@ func TestBuildDialOpts_CustomTLS(t *testing.T) {
 }
 
 func TestBuildDialOpts_WithKeepalive(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithKeepalive(15*time.Second, 5*time.Second),
@@ -676,6 +701,7 @@ func TestBuildDialOpts_WithKeepalive(t *testing.T) {
 }
 
 func TestBuildDialOpts_WithDialOptions(t *testing.T) {
+	t.Parallel()
 	customOpt := grpc.WithAuthority("custom-authority")
 	store, err := NewRemoteStore("localhost:9999",
 		WithInsecure(),
@@ -692,6 +718,7 @@ func TestBuildDialOpts_WithDialOptions(t *testing.T) {
 }
 
 func TestCircuitBreaker_Disabled(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999", WithInsecure())
 
 	// Circuit breaker is disabled by default
@@ -715,6 +742,7 @@ func TestCircuitBreaker_Disabled(t *testing.T) {
 }
 
 func TestCircuitBreaker_ResetCircuit(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCircuitBreaker(3, time.Minute),
@@ -742,6 +770,7 @@ func TestCircuitBreaker_ResetCircuit(t *testing.T) {
 }
 
 func TestCircuitBreaker_RecordSuccessResetsCount(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCircuitBreaker(3, time.Minute),
@@ -769,6 +798,7 @@ func TestCircuitBreaker_RecordSuccessResetsCount(t *testing.T) {
 }
 
 func TestCircuitBreaker_GetClientReturnsError(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCircuitBreaker(1, time.Minute),
@@ -791,6 +821,7 @@ func TestCircuitBreaker_GetClientReturnsError(t *testing.T) {
 }
 
 func TestProtoToValue_OnlyCreatedAt(t *testing.T) {
+	t.Parallel()
 	created := timestamppb.New(time.Date(2025, 1, 15, 10, 0, 0, 0, time.UTC))
 	entry := &configpb.Entry{
 		Namespace: "ns",
@@ -817,6 +848,7 @@ func TestProtoToValue_OnlyCreatedAt(t *testing.T) {
 }
 
 func TestProtoToValue_OnlyUpdatedAt(t *testing.T) {
+	t.Parallel()
 	updated := timestamppb.New(time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC))
 	entry := &configpb.Entry{
 		Namespace: "ns",
@@ -840,6 +872,7 @@ func TestProtoToValue_OnlyUpdatedAt(t *testing.T) {
 }
 
 func TestProtoToValue_TypeWithoutVersionOrTimestamps(t *testing.T) {
+	t.Parallel()
 	entry := &configpb.Entry{
 		Namespace: "ns",
 		Key:       "key",
@@ -857,6 +890,7 @@ func TestProtoToValue_TypeWithoutVersionOrTimestamps(t *testing.T) {
 }
 
 func TestProtoToValue_EmptyValueBytes(t *testing.T) {
+	t.Parallel()
 	entry := &configpb.Entry{
 		Namespace: "ns",
 		Key:       "key",
@@ -873,6 +907,7 @@ func TestProtoToValue_EmptyValueBytes(t *testing.T) {
 }
 
 func TestProtoToValue_VersionOnlyNoTimestamps(t *testing.T) {
+	t.Parallel()
 	entry := &configpb.Entry{
 		Namespace: "ns",
 		Key:       "key",
@@ -890,6 +925,7 @@ func TestProtoToValue_VersionOnlyNoTimestamps(t *testing.T) {
 }
 
 func TestOptions_WithWatchReconnectWaitTime(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(true, 3*time.Second),
@@ -903,6 +939,7 @@ func TestOptions_WithWatchReconnectWaitTime(t *testing.T) {
 }
 
 func TestOptions_WithWatchErrorCallback(t *testing.T) {
+	t.Parallel()
 	called := false
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
@@ -920,6 +957,7 @@ func TestOptions_WithWatchErrorCallback(t *testing.T) {
 }
 
 func TestOptions_WithKeepalive(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithKeepalive(20*time.Second, 8*time.Second),
@@ -933,6 +971,7 @@ func TestOptions_WithKeepalive(t *testing.T) {
 }
 
 func TestOptions_WithStateCallback(t *testing.T) {
+	t.Parallel()
 	var received ConnState
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
@@ -950,6 +989,7 @@ func TestOptions_WithStateCallback(t *testing.T) {
 }
 
 func TestOptions_WithWatchMaxErrors(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchMaxErrors(7),
@@ -960,6 +1000,7 @@ func TestOptions_WithWatchMaxErrors(t *testing.T) {
 }
 
 func TestOptions_WithWatchBufferSizeZero(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchBufferSize(0),
@@ -970,6 +1011,7 @@ func TestOptions_WithWatchBufferSizeZero(t *testing.T) {
 }
 
 func TestOptions_DefaultValues(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999", WithInsecure())
 	if store.opts.maxRetries != 3 {
 		t.Errorf("default maxRetries = %d, want 3", store.opts.maxRetries)
@@ -1004,6 +1046,7 @@ func TestOptions_DefaultValues(t *testing.T) {
 }
 
 func TestOptions_WithTLS_NilConfig(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999", WithTLS(nil))
 	if !store.opts.secure {
 		t.Error("secure should be true")
@@ -1014,6 +1057,7 @@ func TestOptions_WithTLS_NilConfig(t *testing.T) {
 }
 
 func TestOptions_WithDialOptions(t *testing.T) {
+	t.Parallel()
 	opt1 := grpc.WithAuthority("a")
 	opt2 := grpc.WithAuthority("b")
 	store, _ := NewRemoteStore("localhost:9999",
@@ -1026,6 +1070,7 @@ func TestOptions_WithDialOptions(t *testing.T) {
 }
 
 func TestConnectAfterClose(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999", WithInsecure())
 	store.Close(context.Background())
 
@@ -1153,6 +1198,7 @@ func (m *mockConfigClient) ListNamespaces(ctx context.Context, in *configpb.List
 }
 
 func TestWatchLoop_ReconnectDisabled(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
@@ -1189,6 +1235,7 @@ func TestWatchLoop_ReconnectDisabled(t *testing.T) {
 }
 
 func TestWatchLoop_MaxErrorsRespected(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(true, 1*time.Millisecond),
@@ -1238,6 +1285,7 @@ func TestWatchLoop_MaxErrorsRespected(t *testing.T) {
 }
 
 func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(true, 1*time.Millisecond),
@@ -1312,6 +1360,7 @@ func TestWatchLoop_BackoffResetsAfterSuccess(t *testing.T) {
 }
 
 func TestWatchLoop_OnWatchErrorCallback(t *testing.T) {
+	t.Parallel()
 	var callbackErrors []error
 	var mu sync.Mutex
 
@@ -1357,6 +1406,7 @@ func TestWatchLoop_OnWatchErrorCallback(t *testing.T) {
 }
 
 func TestWatchLoop_StoreCloseDuringWatch(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(true, 1*time.Millisecond),
@@ -1448,6 +1498,7 @@ func (b *blockingConfigClient) Watch(ctx context.Context, in *configpb.WatchRequ
 }
 
 func TestWatchStream_DeleteChangeType(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
@@ -1498,6 +1549,7 @@ func TestWatchStream_DeleteChangeType(t *testing.T) {
 }
 
 func TestWatchStream_NilEntry(t *testing.T) {
+	t.Parallel()
 	store, _ := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithWatchReconnect(false, 0),
@@ -1550,6 +1602,7 @@ func TestWatchStream_NilEntry(t *testing.T) {
 }
 
 func TestRemoteError_Error(t *testing.T) {
+	t.Parallel()
 	err := &RemoteError{Code: codes.Internal, Message: "boom"}
 	want := "config: remote error (Internal): boom"
 	if got := err.Error(); got != want {
@@ -1558,6 +1611,7 @@ func TestRemoteError_Error(t *testing.T) {
 }
 
 func TestWithCallTimeout(t *testing.T) {
+	t.Parallel()
 	store, err := NewRemoteStore("localhost:9999",
 		WithInsecure(),
 		WithCallTimeout(50*time.Millisecond),
@@ -1605,6 +1659,7 @@ func (c *slowConfigClient) Get(ctx context.Context, in *configpb.GetRequest, opt
 }
 
 func TestOptionValidation(t *testing.T) {
+	t.Parallel()
 	t.Run("WithRetry negative maxRetries", func(t *testing.T) {
 		store, _ := NewRemoteStore("localhost:9999",
 			WithInsecure(),
@@ -1666,6 +1721,7 @@ func TestOptionValidation(t *testing.T) {
 }
 
 func TestPermissionDeniedError_Error(t *testing.T) {
+	t.Parallel()
 	t.Run("with message", func(t *testing.T) {
 		err := &PermissionDeniedError{Message: "no access"}
 		want := "config: permission denied: no access"

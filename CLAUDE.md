@@ -99,13 +99,29 @@ config-server/
 ## Testing
 
 ```bash
-go test -race ./...
+go test -race ./...                       # root module
+cd authorizer/opa && go test -race ./...  # nested module (separate go.mod)
+
+just test          # both modules, verbose
+just test-race     # both modules, race detector
+just test-cover    # both modules, per-package coverage
+just test-cover-gate  # enforce the coverage threshold locally
 ```
 
 Tests use:
 - `bufconn` for in-process gRPC integration tests (service, gateway)
 - Mock clients and streams for unit tests (client)
 - No external dependencies required
+
+### Coverage Gate
+
+CI enforces a **minimum 80% statement coverage per tested package**, across
+both the root module and the `authorizer/opa` nested module. The check lives in
+the `coverage` job of `.github/workflows/ci.yml` and is mirrored locally by
+`just test-cover-gate`. Packages with no test files (`examples/*`, generated
+`proto/*`) are excluded from the gate. The `authorizer/opa` module has its own
+`go.mod`, so it is built and tested as a separate step in CI (it is not reached
+by the root `go test ./...`).
 
 ## Error Mapping
 

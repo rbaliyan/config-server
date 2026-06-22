@@ -7,6 +7,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/hashicorp/memberlist v0.5.4
+	github.com/lib/pq v1.12.3
 	github.com/rbaliyan/config v0.8.0
 	github.com/redis/go-redis/v9 v9.20.1
 	golang.org/x/sync v0.21.0

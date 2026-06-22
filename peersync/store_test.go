@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/rbaliyan/config"
-	"github.com/rbaliyan/config/memory"
 	_ "github.com/rbaliyan/config/codec/json"
+	"github.com/rbaliyan/config/memory"
+
+	"github.com/rbaliyan/config-server/internal/testutil"
 )
 
 // memTransport is an in-process Transport for tests.
@@ -85,6 +87,7 @@ func newTestStore(t *testing.T, id string, tr Transport, opts ...Option) *SyncSt
 // TestSyncStore_OwnerServesLocally verifies that the ring owner writes directly
 // to its local store (single-node cluster owns all namespaces).
 func TestSyncStore_OwnerServesLocally(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -109,6 +112,7 @@ func TestSyncStore_OwnerServesLocally(t *testing.T) {
 // TestSyncStore_NonOwnerRejectsWithoutDialer verifies that without a PeerDialer,
 // operations routed to a live remote owner return ErrNotOwner.
 func TestSyncStore_NonOwnerRejectsWithoutDialer(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -131,6 +135,7 @@ func TestSyncStore_NonOwnerRejectsWithoutDialer(t *testing.T) {
 // TestSyncStore_NonOwnerRoutesToOwner verifies that with a PeerDialer, a
 // non-owner forwards operations to the owner's store transparently.
 func TestSyncStore_NonOwnerRoutesToOwner(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	dialer := newTestDialer()
@@ -207,6 +212,7 @@ func TestSyncStore_NonOwnerRoutesToOwner(t *testing.T) {
 }
 
 func TestSyncStore_PinUnpin(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 
 	a := newTestStore(t, "nodeA", tr)
@@ -221,30 +227,26 @@ func TestSyncStore_PinUnpin(t *testing.T) {
 		t.Fatalf("Pin: %v", err)
 	}
 
-	// scheduleAnnounce is async; drain the channel via the announceLoop.
-	time.Sleep(20 * time.Millisecond)
-
-	id, ok := a.OwnerOf("payments")
-	if !ok || id != "nodeB" {
-		t.Fatalf("Pin: expected nodeB owner, got %q ok=%v", id, ok)
-	}
-	// Pin is gossiped; both nodes should see it.
-	id, ok = b.OwnerOf("payments")
-	if !ok || id != "nodeB" {
-		t.Fatalf("Pin not gossiped to nodeB: got %q ok=%v", id, ok)
-	}
+	// scheduleAnnounce is async; poll until the local pin and its gossip to
+	// nodeB are both visible instead of guessing at a fixed delay.
+	testutil.WaitFor(t, time.Second, 5*time.Millisecond, func() bool {
+		ida, oka := a.OwnerOf("payments")
+		idb, okb := b.OwnerOf("payments")
+		return oka && ida == "nodeB" && okb && idb == "nodeB"
+	}, "pin nodeB not reflected on both nodes")
 
 	a.Unpin("payments")
-	time.Sleep(20 * time.Millisecond)
 
-	// After unpin, routing is by hash — just verify it returns a valid node.
-	id, ok = a.OwnerOf("payments")
-	if !ok || (id != "nodeA" && id != "nodeB") {
-		t.Fatalf("unexpected owner after Unpin: %q ok=%v", id, ok)
-	}
+	// After unpin, routing falls back to the hash ring. Poll until the override
+	// is gone (owner is whatever the hash selects, a valid member).
+	testutil.WaitFor(t, time.Second, 5*time.Millisecond, func() bool {
+		id, ok := a.OwnerOf("payments")
+		return ok && (id == "nodeA" || id == "nodeB")
+	}, "owner not resolved to a hash-ring member after Unpin")
 }
 
 func TestSyncStore_FailureDetection(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -261,27 +263,24 @@ func TestSyncStore_FailureDetection(t *testing.T) {
 	_ = b.Connect(ctx)
 
 	// nodeB should be visible on nodeA's ring after its first heartbeat.
-	time.Sleep(50 * time.Millisecond)
-	if !a.HasMember("nodeB") {
-		t.Fatal("nodeB not seen by nodeA after heartbeat")
-	}
+	testutil.WaitFor(t, time.Second, 5*time.Millisecond, func() bool {
+		return a.HasMember("nodeB")
+	}, "nodeB not seen by nodeA after heartbeat")
 
 	// Stop nodeB without sending a graceful leave.
 	b.cancel()
 	b.wg.Wait()
 
 	// Wait for nodeA's failure detector to evict nodeB.
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if !a.HasMember("nodeB") {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testutil.Eventually(time.Second, 5*time.Millisecond, func() bool {
+		return !a.HasMember("nodeB")
+	}) {
+		t.Fatal("nodeB was not evicted from nodeA's ring after failure timeout")
 	}
-	t.Fatal("nodeB was not evicted from nodeA's ring after failure timeout")
 }
 
 func TestNew_Validation(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	local := memory.NewStore()
 
@@ -298,13 +297,15 @@ func TestNew_Validation(t *testing.T) {
 
 // TestSyncStore_Members verifies Members() returns the current ring members.
 func TestSyncStore_Members(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	a := newTestStore(t, "nodeA", tr)
 	b := newTestStore(t, "nodeB", tr)
 	_ = b
 
-	time.Sleep(20 * time.Millisecond)
-
+	// nodeA is always its own member from construction; the assertion below only
+	// inspects self-membership, so no convergence wait is needed (the default 5s
+	// heartbeat means nodeB would not appear quickly anyway).
 	members := a.Members()
 	found := make(map[string]bool)
 	for _, m := range members {
@@ -317,11 +318,14 @@ func TestSyncStore_Members(t *testing.T) {
 
 // TestSyncStore_Snapshot verifies Snapshot() is deterministic across calls.
 func TestSyncStore_Snapshot(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	a := newTestStore(t, "nodeA", tr)
 	newTestStore(t, "nodeB", tr)
-	time.Sleep(20 * time.Millisecond)
 
+	// Determinism is a property of two back-to-back reads of whatever the ring
+	// state currently is; it does not depend on nodeB converging, so there is no
+	// condition to wait on here.
 	s1 := a.Snapshot()
 	s2 := a.Snapshot()
 
@@ -335,6 +339,7 @@ func TestSyncStore_Snapshot(t *testing.T) {
 // TestSyncStore_RingOnlyPeerEviction verifies that nodes added only via
 // ring-change messages (never sent a heartbeat) can still be evicted.
 func TestSyncStore_RingOnlyPeerEviction(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -370,19 +375,17 @@ func TestSyncStore_RingOnlyPeerEviction(t *testing.T) {
 		t.Fatal("nodeC not added via ring-change")
 	}
 
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if !a.HasMember("nodeC") {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testutil.Eventually(time.Second, 5*time.Millisecond, func() bool {
+		return !a.HasMember("nodeC")
+	}) {
+		t.Fatal("nodeC (ring-only peer) was not evicted after failure timeout")
 	}
-	t.Fatal("nodeC (ring-only peer) was not evicted after failure timeout")
 }
 
 // TestRing_StaleApplyRejected verifies that Apply ignores ring states whose
 // epoch is not strictly greater than the current epoch.
 func TestRing_StaleApplyRejected(t *testing.T) {
+	t.Parallel()
 	r := newRing(10)
 	r.Add(Member{ID: "n1", Addr: "n1:9000"})
 	epoch := r.Epoch()
@@ -414,6 +417,7 @@ func TestRing_StaleApplyRejected(t *testing.T) {
 // failure detector cannot be immediately re-added by a ring-change gossip
 // message that still includes it (eviction greylist).
 func TestSyncStore_EvictedNodeNotResurrected(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -443,14 +447,9 @@ func TestSyncStore_EvictedNodeNotResurrected(t *testing.T) {
 		h(payload)
 	}
 
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if !a.HasMember("nodeD") {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if a.HasMember("nodeD") {
+	if !testutil.Eventually(time.Second, 5*time.Millisecond, func() bool {
+		return !a.HasMember("nodeD")
+	}) {
 		t.Fatal("nodeD was not evicted")
 	}
 
@@ -474,6 +473,7 @@ func TestSyncStore_EvictedNodeNotResurrected(t *testing.T) {
 // TestSyncStore_CloseBeforeConnect verifies Close is safe when called on a
 // store that was never Connected.
 func TestSyncStore_CloseBeforeConnect(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	s, err := New(memory.NewStore(), Member{ID: "n1", Addr: "n1:9000"}, tr)
 	if err != nil {
@@ -497,6 +497,7 @@ func (t *errTransport) Publish(_ context.Context, _ []byte) error {
 // TestSyncStore_PublishError verifies that transport publish errors (heartbeat
 // and ring-change) are logged but do not affect Set on the owning node.
 func TestSyncStore_PublishError(t *testing.T) {
+	t.Parallel()
 	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tr := &errTransport{publishErr: errors.New("network down")}
 	ctx := context.Background()
@@ -532,6 +533,7 @@ func (t *healthTransport) Health(_ context.Context) error {
 
 // TestSyncStore_Health verifies Health checks both local store and transport.
 func TestSyncStore_Health(t *testing.T) {
+	t.Parallel()
 	tr := &healthTransport{}
 	ctx := context.Background()
 
@@ -592,6 +594,7 @@ func (s *testOwnershipStore) DeleteOwner(_ context.Context, namespace string) er
 // OwnershipStore and that a new SyncStore using the same store reloads
 // ownership on Connect without requiring gossip.
 func TestSyncStore_ClaimPersistsOwnership(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	os := newTestOwnershipStore()
@@ -629,6 +632,7 @@ func TestSyncStore_ClaimPersistsOwnership(t *testing.T) {
 // TestSyncStore_UnclaimRemovesOwnership verifies that Unclaim deletes the DB
 // record and restores hash-ring routing.
 func TestSyncStore_UnclaimRemovesOwnership(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	os := newTestOwnershipStore()
@@ -650,6 +654,7 @@ func TestSyncStore_UnclaimRemovesOwnership(t *testing.T) {
 // ErrNamespaceReadOnly when the namespace is pinned to an unreachable node,
 // and that reads fall back to the local store.
 func TestSyncStore_ReadOnlyOnDeadOwner(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -689,6 +694,7 @@ func TestSyncStore_ReadOnlyOnDeadOwner(t *testing.T) {
 // TestSyncStore_ClaimAfterDeadOwner verifies that Claim re-enables writes
 // after a namespace was in read-only state.
 func TestSyncStore_ClaimAfterDeadOwner(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -715,6 +721,7 @@ func TestSyncStore_ClaimAfterDeadOwner(t *testing.T) {
 // TestSyncStore_PinRejectsUnknownTarget verifies that Pin returns an error
 // when the target node is not a live ring member, preventing silent dead-owner state.
 func TestSyncStore_PinRejectsUnknownTarget(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	a := newTestStore(t, "nodeA", tr)
 
@@ -730,6 +737,7 @@ func TestSyncStore_PinRejectsUnknownTarget(t *testing.T) {
 // TestSyncStore_ConnectIdempotent verifies that a second Connect call returns
 // an error without spawning duplicate goroutines.
 func TestSyncStore_ConnectIdempotent(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr) // already connected
@@ -742,6 +750,7 @@ func TestSyncStore_ConnectIdempotent(t *testing.T) {
 // TestSyncStore_ConcurrentPin verifies that concurrent Pin calls on the same
 // store do not race or corrupt ring state.
 func TestSyncStore_ConcurrentPin(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	a := newTestStore(t, "nodeA", tr)
 	newTestStore(t, "nodeB", tr)
@@ -772,6 +781,7 @@ func TestSyncStore_ConcurrentPin(t *testing.T) {
 // and inbound ring-change Apply do not race. The race detector is the
 // primary assertion here.
 func TestSyncStore_ConcurrentSetAndRingChange(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	dialer := newTestDialer()
@@ -779,8 +789,8 @@ func TestSyncStore_ConcurrentSetAndRingChange(t *testing.T) {
 	localA := memory.NewStore()
 	a, err := New(localA, Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
 		WithPeerDialer(dialer),
-		WithHeartbeatInterval(time.Hour),          // disable background noise
-		WithFailureTimeout(4*time.Hour),            // satisfy 3× ratio invariant
+		WithHeartbeatInterval(time.Hour), // disable background noise
+		WithFailureTimeout(4*time.Hour),  // satisfy 3× ratio invariant
 	)
 	if err != nil {
 		t.Fatalf("New nodeA: %v", err)
@@ -832,6 +842,7 @@ func TestSyncStore_ConcurrentSetAndRingChange(t *testing.T) {
 // TestSyncStore_ConnectLoadOwnedError verifies that a LoadOwned failure during
 // Connect returns an error and does not leave background goroutines running.
 func TestSyncStore_ConnectLoadOwnedError(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -855,6 +866,7 @@ func TestSyncStore_ConnectLoadOwnedError(t *testing.T) {
 // TestSyncStore_PublishTimeoutIndependentOfHeartbeat verifies that
 // WithPublishTimeout applied before WithHeartbeatInterval is not overwritten.
 func TestSyncStore_PublishTimeoutIndependentOfHeartbeat(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	s, err := New(memory.NewStore(), Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
 		WithPublishTimeout(500*time.Millisecond),
@@ -877,6 +889,7 @@ func TestSyncStore_PublishTimeoutIndependentOfHeartbeat(t *testing.T) {
 // before shutting down, so peers learn of the departure without waiting for
 // the failure timeout.
 func TestSyncStore_GracefulLeave(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 
@@ -913,6 +926,7 @@ func TestSyncStore_GracefulLeave(t *testing.T) {
 // TestSyncStore_CloseIdempotent verifies that Close can be called twice
 // without panicking or returning an error.
 func TestSyncStore_CloseIdempotent(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -930,6 +944,7 @@ func TestSyncStore_CloseIdempotent(t *testing.T) {
 // TestSyncStore_Find verifies that Find on an owned namespace queries the
 // local store and returns the expected page.
 func TestSyncStore_Find(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -949,6 +964,7 @@ func TestSyncStore_Find(t *testing.T) {
 // TestSyncStore_Watch verifies that Watch returns a channel that receives
 // change events from the local store.
 func TestSyncStore_Watch(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -977,6 +993,7 @@ func TestSyncStore_Watch(t *testing.T) {
 
 // TestSyncStore_WithVNodes verifies that WithVNodes is applied to the ring.
 func TestSyncStore_WithVNodes(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	s, err := New(memory.NewStore(), Member{ID: "nodeA", Addr: "nodeA:9000"}, tr,
 		WithVNodes(10),
@@ -992,6 +1009,7 @@ func TestSyncStore_WithVNodes(t *testing.T) {
 // TestSyncStore_WithErrorHandler verifies that a custom error handler is
 // invoked for non-fatal gossip errors instead of the default logger.
 func TestSyncStore_WithErrorHandler(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	var captured []error
@@ -1019,6 +1037,7 @@ func TestSyncStore_WithErrorHandler(t *testing.T) {
 // TestSyncStore_BulkStore_GetSetDeleteMany verifies BulkStore routing for the
 // owner node.
 func TestSyncStore_BulkStore_GetSetDeleteMany(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -1051,6 +1070,7 @@ func TestSyncStore_BulkStore_GetSetDeleteMany(t *testing.T) {
 // TestSyncStore_BulkStore_NonOwnerForwards verifies that BulkStore operations
 // on a non-owned namespace are forwarded via PeerDialer.
 func TestSyncStore_BulkStore_NonOwnerForwards(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	dialer := newTestDialer()
@@ -1097,6 +1117,7 @@ func TestSyncStore_BulkStore_NonOwnerForwards(t *testing.T) {
 
 // TestSyncStore_Stats verifies Stats is served from the local store.
 func TestSyncStore_Stats(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -1116,6 +1137,7 @@ func TestSyncStore_Stats(t *testing.T) {
 // TestSyncStore_AliasStore verifies SetAlias / GetAlias / DeleteAlias /
 // ListAliases routing on the owner node.
 func TestSyncStore_AliasStore(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -1155,6 +1177,7 @@ func TestSyncStore_AliasStore(t *testing.T) {
 
 // TestSyncStore_GetVersions verifies GetVersions routing on the owner node.
 func TestSyncStore_GetVersions(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr)
@@ -1179,6 +1202,7 @@ func TestSyncStore_GetVersions(t *testing.T) {
 // BulkStore/VersionedStore/AliasStore operations return ErrNotOwner when the
 // namespace is owned by a live remote node and no PeerDialer is configured.
 func TestSyncStore_OptionalInterfaces_NoDialerReturnsError(t *testing.T) {
+	t.Parallel()
 	tr := &memTransport{}
 	ctx := context.Background()
 	s := newTestStore(t, "nodeA", tr) // no dialer

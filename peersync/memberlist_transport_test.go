@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/rbaliyan/config"
 	"github.com/rbaliyan/config/memory"
+
+	"github.com/rbaliyan/config-server/internal/testutil"
 )
 
 // newTestMemberlistConfig returns a memberlist config suitable for unit tests:
@@ -63,9 +65,9 @@ func TestNewMemberlistTransport_OK(t *testing.T) {
 
 func TestMemberlistTransport_ImplementsInterfaces(t *testing.T) {
 	tr := newTestMemberlistTransport(t, "node1")
-	var _ Transport             = tr
+	var _ Transport = tr
 	var _ TransportHealthChecker = tr
-	var _ MembershipTransport   = tr
+	var _ MembershipTransport = tr
 }
 
 func TestMemberlistTransport_PeerAddrInMeta(t *testing.T) {
@@ -179,7 +181,11 @@ func TestMemberlistTransport_TwoNodeBroadcast(t *testing.T) {
 		t.Fatalf("Join: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait for SWIM membership to converge (both nodes see each other) before
+	// publishing, so the broadcast actually has a peer to reach.
+	testutil.WaitFor(t, 3*time.Second, 10*time.Millisecond, func() bool {
+		return len(trA.Members()) >= 2 && len(trB.Members()) >= 2
+	}, "memberlist cluster did not converge before broadcast")
 
 	want := []byte("broadcast-test")
 	if err := trA.Publish(ctx, want); err != nil {
@@ -279,7 +285,11 @@ func TestMemberlistTransport_MemberLeft(t *testing.T) {
 	if _, err := trB.Join([]string{addrA}); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let membership converge
+	// Let membership converge so A actually knows about B before B leaves;
+	// otherwise the leave has no peer to notify.
+	testutil.WaitFor(t, 3*time.Second, 10*time.Millisecond, func() bool {
+		return len(trA.Members()) >= 2
+	}, "nodeA did not see nodeB before close")
 
 	// Close B — should trigger a graceful leave and fire MemberLeft on A.
 	if err := trB.Close(); err != nil {
@@ -340,14 +350,9 @@ func TestMemberlistTransport_SyncStoreIntegration(t *testing.T) {
 	}
 
 	// Wait for SWIM membership events and ring convergence.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if nodeA.HasMember("nodeB") && nodeB.HasMember("nodeA") {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !nodeA.HasMember("nodeB") || !nodeB.HasMember("nodeA") {
+	if !testutil.Eventually(3*time.Second, 20*time.Millisecond, func() bool {
+		return nodeA.HasMember("nodeB") && nodeB.HasMember("nodeA")
+	}) {
 		t.Fatal("ring did not converge: nodes do not know about each other")
 	}
 
@@ -356,18 +361,10 @@ func TestMemberlistTransport_SyncStoreIntegration(t *testing.T) {
 		t.Fatalf("Claim: %v", err)
 	}
 	// Wait for ring-change gossip to reach nodeB.
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	testutil.WaitFor(t, 2*time.Second, 20*time.Millisecond, func() bool {
 		owner, _ := nodeB.OwnerOf("ns")
-		if owner == "nodeA" {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	owner, _ := nodeB.OwnerOf("ns")
-	if owner != "nodeA" {
-		t.Fatalf("OwnerOf(ns) on nodeB = %q, want %q", owner, "nodeA")
-	}
+		return owner == "nodeA"
+	}, "ring-change gossip (Claim) did not reach nodeB")
 
 	// Set from nodeB — should be forwarded to nodeA's local store.
 	if _, err := nodeB.Set(ctx, "ns", "key", config.NewValue("hello")); err != nil {
@@ -397,10 +394,12 @@ func TestMemberlistTransport_Members(t *testing.T) {
 		t.Fatalf("Join: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
-
-	if n := len(trA.Members()); n < 2 {
-		t.Errorf("trA.Members: got %d, want ≥2", n)
+	// Poll until SWIM membership converges to both nodes rather than assuming a
+	// fixed gossip latency.
+	if !testutil.Eventually(3*time.Second, 10*time.Millisecond, func() bool {
+		return len(trA.Members()) >= 2
+	}) {
+		t.Errorf("trA.Members: got %d, want ≥2", len(trA.Members()))
 	}
 }
 
