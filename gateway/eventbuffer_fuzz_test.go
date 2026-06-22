@@ -3,7 +3,23 @@ package gateway
 import (
 	"strconv"
 	"testing"
+
+	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 )
+
+// fuzzResp builds a minimal WatchResponse. It is defined locally (rather than
+// reusing the mkResp helper in eventbuffer_test.go) so this fuzz target is
+// self-contained: ClusterFuzzLite compiles the fuzz file plus production code
+// only, not sibling _test.go helpers.
+func fuzzResp(i int) *configpb.WatchResponse {
+	return &configpb.WatchResponse{
+		Type: configpb.ChangeType_CHANGE_TYPE_SET,
+		Entry: &configpb.Entry{
+			Namespace: "ns",
+			Key:       "k" + strconv.Itoa(i),
+		},
+	}
+}
 
 // FuzzEventBufferSince fuzzes the SSE Last-Event-ID replay path: a fuzzed
 // sequence of pushes builds the ring buffer, then a fuzzed (attacker-supplied)
@@ -61,7 +77,7 @@ func FuzzEventBufferSince(f *testing.F) {
 		// the exact set currently retained in the ring.
 		var pushedIDs []string
 		for i := 0; i < pushes; i++ {
-			id := b.push(mkResp(i))
+			id := b.push(fuzzResp(i))
 			if size == 0 {
 				if id != "" {
 					t.Fatalf("disabled buffer returned non-empty id %q", id)
