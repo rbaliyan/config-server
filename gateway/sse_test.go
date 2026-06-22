@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rbaliyan/config"
+	"github.com/rbaliyan/config-server/internal/testutil"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"github.com/rbaliyan/config-server/service"
 	"github.com/rbaliyan/config/memory"
@@ -76,14 +77,9 @@ func (sr *syncRecorder) result() *httptest.ResponseRecorder {
 // waitForBody polls the recorder body until pred returns true or timeout expires.
 func waitForBody(t *testing.T, rec *syncRecorder, timeout time.Duration, pred func(string) bool) bool {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if pred(rec.bodyString()) {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
+	return testutil.Eventually(timeout, 10*time.Millisecond, func() bool {
+		return pred(rec.bodyString())
+	})
 }
 
 // findSSEEvent scans SSE body text and returns the first sseEvent with the given type.
@@ -134,6 +130,7 @@ func setupSSETest(t *testing.T, opts ...service.Option) (*Handler, config.Store)
 }
 
 func TestSSEWatch_InProcess(t *testing.T) {
+	t.Parallel()
 	handler, store := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,7 +182,241 @@ func TestSSEWatch_InProcess(t *testing.T) {
 	}
 }
 
+// sseFrame is one parsed SSE event frame: its id, event type, and the decoded
+// data payload.
+type sseFrame struct {
+	id    string
+	event string
+	data  sseEvent
+}
+
+// parseSSEFrames parses an SSE body into ordered frames. It pairs each
+// "id:"/"event:"/"data:" block separated by blank lines. Comment lines
+// (": ...") and the "retry:" preamble are skipped.
+func parseSSEFrames(t *testing.T, body string) []sseFrame {
+	t.Helper()
+	var frames []sseFrame
+	var cur sseFrame
+	haveData := false
+	flush := func() {
+		if haveData {
+			frames = append(frames, cur)
+		}
+		cur = sseFrame{}
+		haveData = false
+	}
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case line == "":
+			flush()
+		case strings.HasPrefix(line, "id: "):
+			cur.id = strings.TrimPrefix(line, "id: ")
+		case strings.HasPrefix(line, "event: "):
+			cur.event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			payload := strings.TrimPrefix(line, "data: ")
+			var evt sseEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				cur.data = evt
+				haveData = true
+			}
+		}
+	}
+	flush()
+	return frames
+}
+
+// TestSSEWatch_LastEventIDReplay_AcrossReconnect verifies that after a client
+// disconnects and reconnects carrying Last-Event-ID, the eventbuffer ring
+// replays exactly the events the client missed — no gaps, no duplicates —
+// before the live stream resumes. Both connections share the handler's single
+// event buffer, mirroring a real reconnect against one server.
+func TestSSEWatch_LastEventIDReplay_AcrossReconnect(t *testing.T) {
+	t.Parallel()
+	handler, store := setupSSETest(t)
+
+	// --- First connection: receive a few live events, record the last id. ---
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	req1 := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=replay", nil).WithContext(ctx1)
+	rec1 := newSyncRecorder()
+	done1 := make(chan struct{})
+	go func() {
+		defer close(done1)
+		handler.ServeHTTP(rec1, req1)
+	}()
+
+	if !waitForBody(t, rec1, 2*time.Second, func(s string) bool {
+		return strings.Contains(s, ": connected")
+	}) {
+		t.Fatal("conn1: timed out waiting for preamble")
+	}
+
+	// Produce 5 events on the first connection so all five land in the shared
+	// ring buffer. The ring only records events observed by an active stream,
+	// so the producing connection must be live while they are emitted.
+	for i := 1; i <= 5; i++ {
+		if _, err := store.Set(context.Background(), "replay", fmt.Sprintf("k%d", i), config.NewValue(i)); err != nil {
+			t.Fatalf("Set k%d: %v", i, err)
+		}
+	}
+	// Wait until conn1 has delivered all 5 SET events.
+	if !waitForBody(t, rec1, 3*time.Second, func(s string) bool {
+		return strings.Count(s, "event: set") >= 5
+	}) {
+		t.Fatalf("conn1: timed out waiting for 5 SET events, got:\n%s", rec1.bodyString())
+	}
+
+	cancel1()
+	<-done1
+
+	frames1 := parseSSEFrames(t, rec1.bodyString())
+	var sets1 []sseFrame
+	for _, f := range frames1 {
+		if f.event == "set" {
+			sets1 = append(sets1, f)
+		}
+	}
+	if len(sets1) < 5 {
+		t.Fatalf("conn1: expected >=5 SET frames, got %d", len(sets1))
+	}
+	// Simulate a client that processed through the 3rd event, then dropped the
+	// connection (it "missed" k4 and k5 even though they are in the ring).
+	lastID := sets1[2].id // resume after the 3rd event
+	if lastID == "" {
+		t.Fatal("conn1: 3rd SET frame has empty id")
+	}
+
+	// --- Reconnect carrying Last-Event-ID; the ring should replay k4, k5. ---
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=replay", nil).WithContext(ctx2)
+	req2.Header.Set("Last-Event-ID", lastID)
+	rec2 := newSyncRecorder()
+	done2 := make(chan struct{})
+	go func() {
+		defer close(done2)
+		handler.ServeHTTP(rec2, req2)
+	}()
+
+	// The replayed events are written right after the preamble, so wait until
+	// both missed keys appear.
+	if !waitForBody(t, rec2, 3*time.Second, func(s string) bool {
+		return strings.Contains(s, `"key":"k4"`) && strings.Contains(s, `"key":"k5"`)
+	}) {
+		t.Fatalf("conn2: timed out waiting for replayed events, got:\n%s", rec2.bodyString())
+	}
+
+	cancel2()
+	<-done2
+
+	// --- Assert: exactly the missed events were replayed, in order, no dups. ---
+	frames2 := parseSSEFrames(t, rec2.bodyString())
+	var replayedKeys []string
+	var replayedIDs []string
+	for _, f := range frames2 {
+		if f.event != "set" {
+			continue
+		}
+		replayedKeys = append(replayedKeys, f.data.Key)
+		replayedIDs = append(replayedIDs, f.id)
+	}
+
+	if len(replayedKeys) != 2 {
+		t.Fatalf("conn2: expected exactly 2 replayed SET events, got %d: %v", len(replayedKeys), replayedKeys)
+	}
+	if replayedKeys[0] != "k4" || replayedKeys[1] != "k5" {
+		t.Errorf("conn2: replayed keys = %v, want [k4 k5]", replayedKeys)
+	}
+
+	// No duplicate ids, and every replayed id must be strictly greater than the
+	// resume point (no missed events, no re-delivery of already-seen events).
+	seen := map[string]bool{}
+	for _, id := range replayedIDs {
+		if seen[id] {
+			t.Errorf("conn2: duplicate replayed event id %q", id)
+		}
+		seen[id] = true
+		if id <= lastID {
+			t.Errorf("conn2: replayed id %q <= resume id %q (event should not be re-delivered)", id, lastID)
+		}
+	}
+}
+
+// TestSSEWatch_LastEventIDReplay_EmptyAndMalformed verifies that a reconnect
+// with no Last-Event-ID (or a malformed one) replays nothing — the ring is not
+// dumped wholesale, avoiding a race with the live stream.
+func TestSSEWatch_LastEventIDReplay_EmptyAndMalformed(t *testing.T) {
+	t.Parallel()
+	handler, store := setupSSETest(t)
+
+	// Seed events into the ring via a throwaway connection.
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	req1 := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=norep", nil).WithContext(ctx1)
+	rec1 := newSyncRecorder()
+	done1 := make(chan struct{})
+	go func() { defer close(done1); handler.ServeHTTP(rec1, req1) }()
+	if !waitForBody(t, rec1, 2*time.Second, func(s string) bool { return strings.Contains(s, ": connected") }) {
+		t.Fatal("seed conn: timed out waiting for preamble")
+	}
+	if _, err := store.Set(context.Background(), "norep", "seed", config.NewValue("v")); err != nil {
+		t.Fatalf("Set seed: %v", err)
+	}
+	if !waitForBody(t, rec1, 2*time.Second, func(s string) bool { return strings.Contains(s, "event: set") }) {
+		t.Fatal("seed conn: timed out waiting for SET")
+	}
+	cancel1()
+	<-done1
+
+	for _, lastID := range []string{"", "not-a-number"} {
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		req2 := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=norep", nil).WithContext(ctx2)
+		if lastID != "" {
+			req2.Header.Set("Last-Event-ID", lastID)
+		}
+		rec2 := newSyncRecorder()
+		done2 := make(chan struct{})
+		go func() { defer close(done2); handler.ServeHTTP(rec2, req2) }()
+		if !waitForBody(t, rec2, 2*time.Second, func(s string) bool { return strings.Contains(s, ": connected") }) {
+			t.Fatalf("reconnect (lastID=%q): timed out waiting for preamble", lastID)
+		}
+		// Replay (if any) is written synchronously between the preamble and the
+		// first live event. Emit a fresh live event and wait for it to arrive:
+		// once it does, replay is provably complete, so any erroneously dumped
+		// "seed" frame would already be present. This is a positive observable
+		// signal — no fixed sleep, no weakened assertion.
+		liveKey := "live-" + strings.ReplaceAll(lastID, "-", "")
+		if liveKey == "live-" {
+			liveKey = "live-empty"
+		}
+		if _, err := store.Set(context.Background(), "norep", liveKey, config.NewValue("v")); err != nil {
+			t.Fatalf("Set live event: %v", err)
+		}
+		if !waitForBody(t, rec2, 2*time.Second, func(s string) bool {
+			return strings.Contains(s, `"key":"`+liveKey+`"`)
+		}) {
+			t.Fatalf("reconnect (lastID=%q): timed out waiting for live event", lastID)
+		}
+		cancel2()
+		<-done2
+
+		// The seeded "seed" key must NOT have been replayed; the only SET frame
+		// should be the live event produced after reconnect.
+		frames := parseSSEFrames(t, rec2.bodyString())
+		for _, f := range frames {
+			if f.event != "set" {
+				continue
+			}
+			if f.data.Key != liveKey {
+				t.Errorf("lastID=%q: unexpected replayed SET event %q (ring should not be dumped)", lastID, f.data.Key)
+			}
+		}
+	}
+}
+
 func TestSSEWatch_DeleteEvent(t *testing.T) {
+	t.Parallel()
 	handler, store := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -237,6 +468,7 @@ func TestSSEWatch_DeleteEvent(t *testing.T) {
 }
 
 func TestSSEWatch_Heartbeat(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -279,6 +511,7 @@ func TestSSEWatch_Heartbeat(t *testing.T) {
 }
 
 func TestSSEWatch_ClientDisconnect(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -311,6 +544,7 @@ func TestSSEWatch_ClientDisconnect(t *testing.T) {
 }
 
 func TestSSEWatch_AuthMiddleware(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -341,6 +575,7 @@ func TestSSEWatch_AuthMiddleware(t *testing.T) {
 }
 
 func TestSSEWatch_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/watch", nil)
@@ -353,6 +588,7 @@ func TestSSEWatch_MethodNotAllowed(t *testing.T) {
 }
 
 func TestSSEWatch_QueryParams(t *testing.T) {
+	t.Parallel()
 	r := httptest.NewRequest(http.MethodGet,
 		"/v1/watch?namespaces=ns1&namespaces=ns2&prefixes=app/&prefixes=db/", nil)
 
@@ -370,6 +606,7 @@ func TestSSEWatch_QueryParams(t *testing.T) {
 }
 
 func TestSSEWatch_Headers(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -420,6 +657,7 @@ func (w *nonFlushWriter) Write(b []byte) (int, error) { return w.body.Write(b) }
 func (w *nonFlushWriter) WriteHeader(code int)        { w.code = code }
 
 func TestSSEWatch_NoFlusher(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/watch?namespaces=test", nil)
@@ -436,6 +674,7 @@ func TestSSEWatch_NoFlusher(t *testing.T) {
 }
 
 func TestSSEWatch_Preamble(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -477,6 +716,7 @@ func TestSSEWatch_Preamble(t *testing.T) {
 }
 
 func TestSSEWatch_ExistingRoutes_StillWork(t *testing.T) {
+	t.Parallel()
 	handler, store := setupSSETest(t)
 
 	// Seed data.
@@ -495,6 +735,7 @@ func TestSSEWatch_ExistingRoutes_StillWork(t *testing.T) {
 }
 
 func TestWithHeartbeatInterval(t *testing.T) {
+	t.Parallel()
 	t.Run("positive", func(t *testing.T) {
 		o := &options{}
 		WithHeartbeatInterval(10 * time.Second)(o)
@@ -521,6 +762,7 @@ func TestWithHeartbeatInterval(t *testing.T) {
 }
 
 func TestHandler_Close(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	handler, err := NewHandler(ctx, "localhost:19999", WithInsecure())
@@ -540,6 +782,7 @@ func TestHandler_Close(t *testing.T) {
 }
 
 func TestHandler_Close_InProcess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -591,6 +834,7 @@ func setupBufconn(t *testing.T, store config.Store) *bufconn.Listener {
 }
 
 func TestSSEWatch_Remote(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -667,6 +911,7 @@ func TestSSEWatch_Remote(t *testing.T) {
 }
 
 func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -730,6 +975,7 @@ func TestSSEWatch_Remote_AuthDenied(t *testing.T) {
 }
 
 func TestSSEWatch_Remote_ClosedConn(t *testing.T) {
+	t.Parallel()
 	// Exercise the writeHTTPError path: when the gRPC connection is closed,
 	// client.Watch() itself returns an error before SSE headers are sent.
 
@@ -781,6 +1027,7 @@ func TestSSEWatch_Remote_ClosedConn(t *testing.T) {
 }
 
 func TestWriteHTTPError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      error
@@ -800,6 +1047,7 @@ func TestWriteHTTPError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			rec := httptest.NewRecorder()
 			writeHTTPError(rec, tt.err)
 			if rec.Code != tt.wantCode {
@@ -814,6 +1062,7 @@ func TestWriteHTTPError(t *testing.T) {
 }
 
 func TestMustJSON(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
 		data := mustJSON(map[string]string{"key": "val"})
 		if string(data) != `{"key":"val"}` {
@@ -831,6 +1080,7 @@ func TestMustJSON(t *testing.T) {
 }
 
 func TestResponseToSSEEvent(t *testing.T) {
+	t.Parallel()
 	t.Run("nil_entry", func(t *testing.T) {
 		resp := &configpb.WatchResponse{
 			Type: configpb.ChangeType_CHANGE_TYPE_SET,
@@ -856,6 +1106,7 @@ func TestResponseToSSEEvent(t *testing.T) {
 }
 
 func TestSSEWatchStream_NoOpStubs(t *testing.T) {
+	t.Parallel()
 	stream := &sseWatchStream{}
 	if err := stream.SetHeader(nil); err != nil {
 		t.Errorf("SetHeader returned error: %v", err)
@@ -873,6 +1124,7 @@ func TestSSEWatchStream_NoOpStubs(t *testing.T) {
 }
 
 func TestSSEWatch_ConcurrentConnections(t *testing.T) {
+	t.Parallel()
 	handler, store := setupSSETest(t)
 
 	const numClients = 5
@@ -942,6 +1194,7 @@ func TestSSEWatch_ConcurrentConnections(t *testing.T) {
 }
 
 func TestSSEWatch_MetadataPropagation(t *testing.T) {
+	t.Parallel()
 	// Verify that HTTP headers are propagated as gRPC metadata
 	// in the in-process handler.
 	ctx := context.Background()
@@ -989,6 +1242,7 @@ func TestSSEWatch_MetadataPropagation(t *testing.T) {
 }
 
 func TestHttpHeadersToMetadata(t *testing.T) {
+	t.Parallel()
 	r := httptest.NewRequest(http.MethodGet, "/v1/watch", nil)
 	r.Header.Set("Authorization", "Bearer token123")
 	r.Header.Set("X-Role", "admin")
@@ -1026,6 +1280,7 @@ func TestHttpHeadersToMetadata(t *testing.T) {
 }
 
 func TestIsForwardableHeader(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		header string
 		want   bool
@@ -1058,6 +1313,7 @@ func TestIsForwardableHeader(t *testing.T) {
 }
 
 func TestSanitizeSSEField(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input, want string
 	}{
@@ -1077,6 +1333,7 @@ func TestSanitizeSSEField(t *testing.T) {
 }
 
 func TestWriteSSEError_Sanitization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		err     error
@@ -1126,6 +1383,7 @@ func TestWriteSSEError_Sanitization(t *testing.T) {
 }
 
 func TestSSEWatch_SpecialCharacterValue(t *testing.T) {
+	t.Parallel()
 	handler, store := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1191,6 +1449,7 @@ func TestSSEWatch_SpecialCharacterValue(t *testing.T) {
 }
 
 func TestParseWatchQuery_Limits(t *testing.T) {
+	t.Parallel()
 	t.Run("too_many_namespaces", func(t *testing.T) {
 		var b strings.Builder
 		b.WriteString("/v1/watch?")
@@ -1271,6 +1530,7 @@ func TestParseWatchQuery_Limits(t *testing.T) {
 }
 
 func TestSSEWatch_QueryParamValidation_HTTP(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	// Build a URL with too many namespaces.
@@ -1296,6 +1556,7 @@ func TestSSEWatch_QueryParamValidation_HTTP(t *testing.T) {
 }
 
 func TestSSEWatch_CleanDisconnect_NoErrorEvent(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupSSETest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

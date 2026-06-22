@@ -1,0 +1,264 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/rbaliyan/config-server/client
+cpu: Apple M4
+BenchmarkIsNonRetryable/NotFound-10         	241157313	         4.957 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	262371882	         4.627 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	259606522	         4.699 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	244296834	         4.829 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	246276626	         4.914 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	254065017	         4.779 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	241555455	         4.899 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	221311837	         5.195 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	243463510	         4.876 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/NotFound-10         	231779644	         5.285 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	28897064	        41.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	30424838	        41.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	28728550	        41.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	27142131	        42.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	28276267	        42.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	27766689	        42.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	28502772	        42.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	28223589	        43.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	29375016	        42.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/StoreClosed-10      	29274093	        43.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	50081035	        24.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	47417554	        25.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	49143486	        24.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	48990670	        25.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	49222269	        24.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	51381592	        25.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	42616789	        24.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	49552886	        24.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	51621229	        25.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/Wrapped-10          	48458335	        24.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13482343	        90.66 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13702123	        92.32 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	12774739	        89.55 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13183227	        88.66 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13231347	        90.32 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13267327	        90.36 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13598972	        88.36 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	13494738	        90.25 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	 8718321	       133.7 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/PermissionDenied-10 	 8785012	       116.7 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15284530	        79.22 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15611498	        79.45 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15597142	        79.24 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15052566	        79.43 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	14922286	        79.21 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15090154	        78.62 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	14960331	        78.98 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	13732628	        88.01 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15569283	        79.43 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsNonRetryable/Retryable-10        	15957004	        79.06 ns/op	       8 B/op	       1 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	296178220	         4.131 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	284589873	         4.191 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	287201434	         4.139 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	285540213	         4.128 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	295627514	         4.101 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	288262432	         4.129 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	279973087	         4.197 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	293311996	         4.169 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	294140445	         4.181 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Closed-10            	296199878	         4.084 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	62758222	        18.99 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	61958268	        19.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	64111838	        18.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	63977536	        19.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	61803238	        19.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	63065785	        19.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	64906380	        18.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	62571014	        18.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	64795106	        18.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsCircuitOpen/Open-10              	61474489	        18.49 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/rbaliyan/config-server/client	84.455s
+PASS
+ok  	github.com/rbaliyan/config-server/dashboard	0.639s
+?   	github.com/rbaliyan/config-server/examples/client	[no test files]
+?   	github.com/rbaliyan/config-server/examples/dashboard-auth/jwt	[no test files]
+?   	github.com/rbaliyan/config-server/examples/dashboard-auth/oidc	[no test files]
+?   	github.com/rbaliyan/config-server/examples/embedded	[no test files]
+?   	github.com/rbaliyan/config-server/examples/standalone	[no test files]
+goos: darwin
+goarch: arm64
+pkg: github.com/rbaliyan/config-server/gateway
+cpu: Apple M4
+BenchmarkEventBufferPush-10     	79389583	        14.87 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	83862082	        14.98 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	79206350	        15.10 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	81521046	        14.82 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	80274270	        14.97 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	78291716	        14.99 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	77196068	        15.18 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	83683227	        14.74 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	80951175	        14.80 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferPush-10     	81662050	        14.71 ns/op	       7 B/op	       1 allocs/op
+BenchmarkEventBufferSince-10    	   99778	     11645 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  112362	     11157 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  109924	     11028 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  114432	     11192 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  106245	     11534 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	   96211	     11244 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  106982	     15894 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	   90548	     12483 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  108434	     11266 ns/op	   32080 B/op	       9 allocs/op
+BenchmarkEventBufferSince-10    	  107236	     10846 ns/op	   32080 B/op	       9 allocs/op
+PASS
+ok  	github.com/rbaliyan/config-server/gateway	25.043s
+goos: darwin
+goarch: arm64
+pkg: github.com/rbaliyan/config-server/peersync
+cpu: Apple M4
+BenchmarkRingOwnerOf-10            	22666724	        56.03 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	21472410	        79.44 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	10012138	       116.9 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	16757732	        64.24 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	22635724	        52.25 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	23507766	        51.41 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	22539637	        52.34 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	19408144	        55.86 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	22919461	        51.49 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOf-10            	22733156	        53.28 ns/op	      23 B/op	       1 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9472986	       118.0 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9018032	       117.9 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	10075538	       119.5 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	10047490	       119.3 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	10146038	       121.9 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9308446	       121.7 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9914827	       123.0 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9594991	       121.3 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9463146	       124.1 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingOwnerOfParallel-10    	 9645771	       123.2 ns/op	      53 B/op	       2 allocs/op
+BenchmarkRingAdd-10                	   64513	     18787 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   60254	     18966 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   62043	     26354 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   55141	     21122 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   64441	     19301 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   63504	     19290 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   55669	     19284 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   60738	     19005 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   60024	     19117 ns/op	   15448 B/op	     467 allocs/op
+BenchmarkRingAdd-10                	   65536	     18483 ns/op	   15447 B/op	     467 allocs/op
+BenchmarkRingApply-10              	    6229	    194264 ns/op	  172119 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    5713	    195859 ns/op	  172120 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6415	    195639 ns/op	  172121 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6346	    191954 ns/op	  172121 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6397	    197034 ns/op	  172121 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6199	    190898 ns/op	  172120 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6120	    191379 ns/op	  172120 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6382	    192215 ns/op	  172119 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6118	    190597 ns/op	  172120 B/op	    4523 allocs/op
+BenchmarkRingApply-10              	    6374	    190564 ns/op	  172119 B/op	    4523 allocs/op
+PASS
+ok  	github.com/rbaliyan/config-server/peersync	51.986s
+PASS
+ok  	github.com/rbaliyan/config-server/peersync/sqlownership	0.679s
+?   	github.com/rbaliyan/config-server/proto/config/v1	[no test files]
+goos: darwin
+goarch: arm64
+pkg: github.com/rbaliyan/config-server/service
+cpu: Apple M4
+BenchmarkClassifyError/NotFound-10         	 5446988	       206.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5653034	       206.9 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5813810	       205.7 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5891998	       203.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5915122	       202.7 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5872669	       202.0 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5995460	       209.1 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5983735	       201.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5959539	       208.1 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/NotFound-10         	 5948199	       203.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5826034	       209.5 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5793529	       204.0 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5739375	       209.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5824020	       207.9 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5863395	       205.5 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5560496	       211.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5829889	       207.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5800322	       228.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5493885	       209.5 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/KeyExists-10        	 5752927	       210.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5611260	       213.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5672178	       212.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5725908	       214.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5574122	       215.4 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5730578	       210.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5754596	       213.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5755160	       207.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5799315	       213.9 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5625445	       211.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/InvalidKey-10       	 5662404	       209.3 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21452529	        56.20 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21819288	        55.75 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	19785642	        57.08 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21411237	        56.17 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21893016	        56.00 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21002581	        55.19 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21850112	        56.78 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	21527672	        56.68 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	20863683	        56.87 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/TypedKeyNotFound-10 	20948516	        56.28 ns/op	      40 B/op	       2 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3210584	       377.4 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3194156	       377.4 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3112862	       379.4 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3159817	       377.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3133108	       388.0 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3175399	       376.4 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3193304	       373.9 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3135336	       375.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3239137	       372.2 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Wrapped-10          	 3124824	       383.1 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4399461	       268.1 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4409409	       271.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4458076	       270.3 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4292926	       283.7 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4344397	       275.8 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4327482	       276.7 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4322852	       282.5 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4359285	       292.7 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4360152	       275.6 ns/op	      48 B/op	       6 allocs/op
+BenchmarkClassifyError/Unknown-10          	 4150923	       280.0 ns/op	      48 B/op	       6 allocs/op
+BenchmarkValueToProto/String-10            	11233500	       108.2 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11040307	       112.0 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11070952	       106.7 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11298056	       106.2 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11100574	       109.5 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	10816546	       108.0 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	10845896	       110.8 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11427423	       108.9 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11105056	       109.6 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/String-10            	11251771	       108.2 ns/op	     272 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	11724498	       103.3 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	10722290	       100.2 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	12425248	        98.10 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	12202495	        99.29 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	12473876	        99.04 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	12227434	       102.5 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	11740916	        98.87 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	12393770	        98.68 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	11990162	       100.7 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Int-10               	11621079	       100.3 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12574106	        99.46 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12650204	        95.77 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12807097	        94.41 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12798764	        97.74 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12446571	        96.61 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12528105	        95.05 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12745674	        94.60 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12587692	        96.91 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12767745	        94.29 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/Bool-10              	12910855	        95.30 ns/op	     264 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  480252	      2549 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  480214	      2546 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  482829	      2534 ns/op	    5123 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  450368	      2599 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  471836	      2570 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  454069	      2586 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  485728	      2559 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  463159	      2538 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  484327	      2587 ns/op	    5124 B/op	       3 allocs/op
+BenchmarkValueToProto/LargeString-10       	  482053	      2687 ns/op	    5124 B/op	       3 allocs/op
+PASS
+ok  	github.com/rbaliyan/config-server/service	121.320s

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rbaliyan/config"
+	"github.com/rbaliyan/config-server/internal/testutil"
 	configpb "github.com/rbaliyan/config-server/proto/config/v1"
 	"github.com/rbaliyan/config/memory"
 	"google.golang.org/grpc"
@@ -39,6 +40,7 @@ func setupTestService(t *testing.T) (*Service, config.Store) {
 }
 
 func TestService_Get(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -70,6 +72,7 @@ func TestService_Get(t *testing.T) {
 }
 
 func TestService_Get_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -92,6 +95,7 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_Set(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -128,6 +132,7 @@ func TestService_Set(t *testing.T) {
 }
 
 func TestService_Delete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -161,6 +166,7 @@ func TestService_Delete(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -190,6 +196,7 @@ func TestService_List(t *testing.T) {
 }
 
 func TestAuthInterceptor_DenyAll(t *testing.T) {
+	t.Parallel()
 	guard := DenyAll()
 	interceptor := AuthInterceptor(guard)
 
@@ -217,6 +224,7 @@ func TestAuthInterceptor_DenyAll(t *testing.T) {
 }
 
 func TestService_CheckAccess(t *testing.T) {
+	t.Parallel()
 	svc, _ := setupTestService(t)
 
 	// CheckAccess requires identity in context (normally placed by AuthInterceptor).
@@ -238,6 +246,7 @@ func TestService_CheckAccess(t *testing.T) {
 }
 
 func TestService_CheckAccess_NoIdentity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -258,6 +267,7 @@ func TestService_CheckAccess_NoIdentity(t *testing.T) {
 }
 
 func TestService_Set_DefaultCodec(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -276,6 +286,7 @@ func TestService_Set_DefaultCodec(t *testing.T) {
 }
 
 func TestService_Set_UnknownCodecPassThrough(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -318,6 +329,7 @@ func TestService_Set_UnknownCodecPassThrough(t *testing.T) {
 }
 
 func TestService_Set_WriteModes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -375,6 +387,7 @@ func TestService_Set_WriteModes(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -414,6 +427,7 @@ func TestService_List_Pagination(t *testing.T) {
 }
 
 func TestToGRPCError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -439,6 +453,7 @@ func TestToGRPCError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := toGRPCError(tt.err)
 			if tt.err == nil {
 				if got != nil {
@@ -458,7 +473,9 @@ func TestToGRPCError(t *testing.T) {
 }
 
 func TestValueToProto(t *testing.T) {
+	t.Parallel()
 	t.Run("nil value", func(t *testing.T) {
+		t.Parallel()
 		entry, err := valueToProto(context.Background(), "ns", "key", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -472,6 +489,7 @@ func TestValueToProto(t *testing.T) {
 	})
 
 	t.Run("with value", func(t *testing.T) {
+		t.Parallel()
 		val := config.NewValue("hello", config.WithValueType(config.TypeString))
 		entry, err := valueToProto(context.Background(), "ns", "key", val)
 		if err != nil {
@@ -490,6 +508,7 @@ func TestValueToProto(t *testing.T) {
 }
 
 func TestRecoveryInterceptor(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	interceptor := RecoveryInterceptor(logger)
 
@@ -515,6 +534,7 @@ func TestRecoveryInterceptor(t *testing.T) {
 }
 
 func TestService_Get_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -540,6 +560,7 @@ func TestService_Get_Validation(t *testing.T) {
 }
 
 func TestService_Set_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -554,6 +575,7 @@ func TestService_Set_Validation(t *testing.T) {
 }
 
 func TestService_Delete_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -568,6 +590,7 @@ func TestService_Delete_Validation(t *testing.T) {
 }
 
 func TestService_List_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -582,6 +605,7 @@ func TestService_List_Validation(t *testing.T) {
 }
 
 func TestStreamRecoveryInterceptor(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	interceptor := StreamRecoveryInterceptor(logger)
 
@@ -603,6 +627,7 @@ func TestStreamRecoveryInterceptor(t *testing.T) {
 }
 
 func TestStreamLoggingInterceptor(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	interceptor := StreamLoggingInterceptor(logger)
 
@@ -626,6 +651,7 @@ func TestStreamLoggingInterceptor(t *testing.T) {
 }
 
 func TestNewService_NilStoreReturnsError(t *testing.T) {
+	t.Parallel()
 	svc, err := NewService(nil)
 	if err == nil {
 		t.Fatal("expected error for nil store, got nil")
@@ -636,6 +662,7 @@ func TestNewService_NilStoreReturnsError(t *testing.T) {
 }
 
 func TestNewService_WithOptions(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStore()
 	ctx := context.Background()
 	_ = store.Connect(ctx)
@@ -652,6 +679,7 @@ func TestNewService_WithOptions(t *testing.T) {
 }
 
 func TestToGRPCError_WrappedErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -666,6 +694,7 @@ func TestToGRPCError_WrappedErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := toGRPCError(tt.err)
 			st, ok := status.FromError(got)
 			if !ok {
@@ -679,6 +708,7 @@ func TestToGRPCError_WrappedErrors(t *testing.T) {
 }
 
 func TestService_Get_ClosedStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -703,6 +733,7 @@ func TestService_Get_ClosedStore(t *testing.T) {
 }
 
 func TestService_Set_ClosedStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -729,6 +760,7 @@ func TestService_Set_ClosedStore(t *testing.T) {
 }
 
 func TestService_Delete_ClosedStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -753,6 +785,7 @@ func TestService_Delete_ClosedStore(t *testing.T) {
 }
 
 func TestService_List_ClosedStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -776,6 +809,7 @@ func TestService_List_ClosedStore(t *testing.T) {
 }
 
 func TestService_Delete_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -793,6 +827,7 @@ func TestService_Delete_NotFound(t *testing.T) {
 }
 
 func TestService_List_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -808,6 +843,7 @@ func TestService_List_Empty(t *testing.T) {
 }
 
 func TestLoggingInterceptor(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	interceptor := LoggingInterceptor(logger)
 
@@ -856,6 +892,14 @@ func (m *mockWatchServer) Send(resp *configpb.WatchResponse) error {
 	return nil
 }
 
+// responseCount returns the number of responses received so far, safely under
+// the mutex. It lets tests poll for event propagation instead of sleeping.
+func (m *mockWatchServer) responseCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.responses)
+}
+
 func (m *mockWatchServer) SetHeader(metadata.MD) error  { return nil }
 func (m *mockWatchServer) SendHeader(metadata.MD) error { return nil }
 func (m *mockWatchServer) SetTrailer(metadata.MD)       {}
@@ -863,6 +907,7 @@ func (m *mockWatchServer) SendMsg(any) error            { return nil }
 func (m *mockWatchServer) RecvMsg(any) error            { return nil }
 
 func TestService_Watch_AllowAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -891,13 +936,16 @@ func TestService_Watch_AllowAll(t *testing.T) {
 		}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := store.Set(ctx, "test", "key2", config.NewValue("value2")); err != nil {
-		t.Fatalf("failed to set test data: %v", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
+	// The watch subscription registers asynchronously inside the goroutine, and
+	// memory-store events are transient (no replay), so a single write can race
+	// the subscription. Re-write until the stream observes at least one event.
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "test", "key2", config.NewValue("value2")); err != nil {
+			t.Errorf("failed to set test data: %v", err)
+			return true
+		}
+		return stream.responseCount() > 0
+	}, "watch stream did not receive a Set event")
 
 	cancel()
 
@@ -914,6 +962,7 @@ func TestService_Watch_AllowAll(t *testing.T) {
 }
 
 func TestStreamAuthInterceptor_DenyAll(t *testing.T) {
+	t.Parallel()
 	guard := DenyAll()
 	interceptor := StreamAuthInterceptor(guard)
 
@@ -941,6 +990,7 @@ func TestStreamAuthInterceptor_DenyAll(t *testing.T) {
 }
 
 func TestService_Watch_NoNamespaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -963,13 +1013,15 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 		errCh <- svc.Watch(&configpb.WatchRequest{}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := store.Set(ctx, "any-ns", "somekey", config.NewValue("val")); err != nil {
-		t.Fatalf("failed to set test data: %v", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
+	// Re-write until the wildcard watch observes the event (subscription
+	// registration is async and events are transient).
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "any-ns", "somekey", config.NewValue("val")); err != nil {
+			t.Errorf("failed to set test data: %v", err)
+			return true
+		}
+		return stream.responseCount() > 0
+	}, "wildcard watch stream did not receive a Set event")
 
 	cancel()
 
@@ -986,6 +1038,7 @@ func TestService_Watch_NoNamespaces(t *testing.T) {
 }
 
 func TestAuthInterceptor_AllowAll(t *testing.T) {
+	t.Parallel()
 	guard := AllowAll()
 	interceptor := AuthInterceptor(guard)
 
@@ -1016,6 +1069,7 @@ func TestAuthInterceptor_AllowAll(t *testing.T) {
 }
 
 func TestStreamAuthInterceptor_AllowAll(t *testing.T) {
+	t.Parallel()
 	guard := AllowAll()
 	interceptor := StreamAuthInterceptor(guard)
 
@@ -1043,6 +1097,7 @@ func TestStreamAuthInterceptor_AllowAll(t *testing.T) {
 }
 
 func TestService_Watch_StoreWatchError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	_ = store.Connect(ctx)
@@ -1064,6 +1119,7 @@ func TestService_Watch_StoreWatchError(t *testing.T) {
 }
 
 func TestService_Watch_ChannelCloses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -1087,7 +1143,16 @@ func TestService_Watch_ChannelCloses(t *testing.T) {
 		}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait until the watch subscription is established (a write propagates to
+	// the stream) before closing, so we exercise the close-while-watching path
+	// rather than a race where Close lands before store.Watch registers.
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "test", "ready-probe", config.NewValue("probe")); err != nil {
+			t.Errorf("failed to set probe value: %v", err)
+			return true
+		}
+		return stream.responseCount() > 0
+	}, "watch subscription was never established")
 
 	store.Close(ctx)
 
@@ -1102,6 +1167,7 @@ func TestService_Watch_ChannelCloses(t *testing.T) {
 }
 
 func TestService_Watch_SendError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -1127,14 +1193,29 @@ func TestService_Watch_SendError(t *testing.T) {
 		}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := store.Set(ctx, "test", "key1", config.NewValue("val")); err != nil {
-		t.Fatalf("failed to set test data: %v", err)
-	}
+	// Keep writing until Watch returns (the first event delivered to the failing
+	// stream produces sendErr). A background writer avoids racing the async
+	// subscription registration; it stops once Watch has returned.
+	writeStop := make(chan struct{})
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-writeStop:
+				return
+			case <-ticker.C:
+				_, _ = store.Set(ctx, "test", "key1", config.NewValue("val"))
+			}
+		}
+	}()
 
 	select {
 	case err := <-errCh:
+		close(writeStop)
+		<-writeDone
 		if err == nil {
 			t.Fatal("expected error from Send failure")
 		}
@@ -1142,11 +1223,14 @@ func TestService_Watch_SendError(t *testing.T) {
 			t.Errorf("expected send error, got: %v", err)
 		}
 	case <-time.After(2 * time.Second):
+		close(writeStop)
+		<-writeDone
 		t.Fatal("Watch did not return after send error")
 	}
 }
 
 func TestService_Watch_DeleteEvent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -1175,13 +1259,33 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 		}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Delete is one-shot (cannot be replayed), so first confirm the subscription
+	// is established via a Set probe before deleting, then poll for the DELETE
+	// event to arrive on the stream.
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "test", "ready-probe", config.NewValue("probe")); err != nil {
+			t.Errorf("failed to set probe value: %v", err)
+			return true
+		}
+		return stream.responseCount() > 0
+	}, "watch subscription was never established")
 
 	if err := store.Delete(ctx, "test", "del-key"); err != nil {
 		t.Fatalf("failed to delete test data: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	hasDelete := func() bool {
+		stream.mu.Lock()
+		defer stream.mu.Unlock()
+		for _, resp := range stream.responses {
+			if resp.Type == configpb.ChangeType_CHANGE_TYPE_DELETE {
+				return true
+			}
+		}
+		return false
+	}
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, hasDelete,
+		"expected at least one DELETE change type in responses")
 
 	cancel()
 
@@ -1190,22 +1294,13 @@ func TestService_Watch_DeleteEvent(t *testing.T) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
 
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-
-	foundDelete := false
-	for _, resp := range stream.responses {
-		if resp.Type == configpb.ChangeType_CHANGE_TYPE_DELETE {
-			foundDelete = true
-			break
-		}
-	}
-	if !foundDelete {
+	if !hasDelete() {
 		t.Error("expected at least one DELETE change type in responses")
 	}
 }
 
 func TestService_Watch_MultipleNamespaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := memory.NewStore()
 	if err := store.Connect(ctx); err != nil {
@@ -1230,16 +1325,20 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 		}, stream)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := store.Set(ctx, "ns1", "k1", config.NewValue("v1")); err != nil {
-		t.Fatalf("failed to set test data: %v", err)
-	}
-	if _, err := store.Set(ctx, "ns2", "k2", config.NewValue("v2")); err != nil {
-		t.Fatalf("failed to set test data: %v", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
+	// Re-write both namespaces until the stream has observed at least one event
+	// from each (>= 2 responses), tolerating async subscription registration and
+	// transient (non-replayed) events.
+	testutil.WaitFor(t, 2*time.Second, 5*time.Millisecond, func() bool {
+		if _, err := store.Set(ctx, "ns1", "k1", config.NewValue("v1")); err != nil {
+			t.Errorf("failed to set test data: %v", err)
+			return true
+		}
+		if _, err := store.Set(ctx, "ns2", "k2", config.NewValue("v2")); err != nil {
+			t.Errorf("failed to set test data: %v", err)
+			return true
+		}
+		return stream.responseCount() >= 2
+	}, "watch stream did not receive events from both namespaces")
 
 	cancel()
 
@@ -1260,6 +1359,7 @@ func TestService_Watch_MultipleNamespaces(t *testing.T) {
 // Auth interceptor authenticates (denyingGuard.Authenticate succeeds);
 // inline authorize in the method calls guard.Authorize which denies.
 func TestServiceDenyingGuard(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStore()
 	if err := store.Connect(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1287,6 +1387,7 @@ func TestServiceDenyingGuard(t *testing.T) {
 }
 
 func TestIdentityFromContext(t *testing.T) {
+	t.Parallel()
 	// No identity in context
 	_, ok := IdentityFromContext(context.Background())
 	if ok {
@@ -1305,6 +1406,7 @@ func TestIdentityFromContext(t *testing.T) {
 }
 
 func TestService_GetVersions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1336,6 +1438,7 @@ func TestService_GetVersions(t *testing.T) {
 }
 
 func TestService_GetVersions_SpecificVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1360,6 +1463,7 @@ func TestService_GetVersions_SpecificVersion(t *testing.T) {
 }
 
 func TestService_GetVersions_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -1377,6 +1481,7 @@ func TestService_GetVersions_NotFound(t *testing.T) {
 }
 
 func TestService_GetVersions_VersionNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1397,6 +1502,7 @@ func TestService_GetVersions_VersionNotFound(t *testing.T) {
 }
 
 func TestService_GetVersions_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -1422,6 +1528,7 @@ func TestService_GetVersions_Validation(t *testing.T) {
 }
 
 func TestService_GetVersions_Pagination(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1462,6 +1569,7 @@ func TestService_GetVersions_Pagination(t *testing.T) {
 }
 
 func TestService_GetVersions_NotSupported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Use a store that does NOT implement VersionedStore.
@@ -1485,6 +1593,7 @@ func TestService_GetVersions_NotSupported(t *testing.T) {
 }
 
 func TestAuthInterceptor_DenyAll_ErrorCode(t *testing.T) {
+	t.Parallel()
 	guard := DenyAll()
 	interceptor := AuthInterceptor(guard)
 
@@ -1504,6 +1613,7 @@ func TestAuthInterceptor_DenyAll_ErrorCode(t *testing.T) {
 }
 
 func TestService_Snapshot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1527,6 +1637,7 @@ func TestService_Snapshot(t *testing.T) {
 }
 
 func TestService_Snapshot_ETag(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, store := setupTestService(t)
 
@@ -1572,6 +1683,7 @@ func TestService_Snapshot_ETag(t *testing.T) {
 }
 
 func TestService_Snapshot_Validation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -1586,6 +1698,7 @@ func TestService_Snapshot_Validation(t *testing.T) {
 }
 
 func TestService_Snapshot_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 

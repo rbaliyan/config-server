@@ -1,0 +1,6 @@
+go test fuzz v1
+string("ns")
+string("k")
+[]byte("\x00\x01\x02binary")
+string("raw")
+int32(0)

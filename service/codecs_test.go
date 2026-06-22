@@ -21,6 +21,7 @@ func (f fakeCodec) Encode(_ context.Context, _ any) ([]byte, error) { return nil
 func (f fakeCodec) Decode(_ context.Context, _ []byte, _ any) error { return nil }
 
 func TestService_ListCodecs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := setupTestService(t)
 
@@ -61,6 +62,7 @@ func TestService_ListCodecs(t *testing.T) {
 }
 
 func TestService_ListCodecs_DenyAll(t *testing.T) {
+	t.Parallel()
 	// ListCodecs must be gated by the SecurityGuard — the codec set can be
 	// sensitive (it tells an attacker which encrypted wrappers are in use).
 	// DenyAll's Authenticate fails before Authorize runs, so the expected
