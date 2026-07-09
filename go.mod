@@ -6,11 +6,11 @@ require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20250520111509-a70c2aa677fa
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
-	github.com/hashicorp/memberlist v0.5.4
+	github.com/hashicorp/memberlist v0.6.0
 	github.com/lib/pq v1.12.3
 	github.com/rbaliyan/config v0.8.1
 	github.com/redis/go-redis/v9 v9.21.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478
@@ -27,15 +27,15 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
-	github.com/hashicorp/go-metrics v0.5.4 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
+	github.com/hashicorp/go-metrics v0.6.0 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/golang-lru v0.5.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/miekg/dns v1.1.68 // indirect
+	github.com/miekg/dns v1.1.72 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
